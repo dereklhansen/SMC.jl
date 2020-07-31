@@ -2,5 +2,7 @@ using SMC
 using Test
 
 @testset "SMC.jl" begin
-    # Write your tests here.
+    @testset "kalman" begin
+        include("kalman.jl")
+    end
 end
