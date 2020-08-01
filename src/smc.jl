@@ -5,6 +5,8 @@ macro NT(expr...)
     Expr(:call, nmexpr, tpexpr)
 end
 
+cpu = identity
+
 struct AliasTable{Q <: Real}
     ap::Vector{Q}
     alias::Vector{Int}

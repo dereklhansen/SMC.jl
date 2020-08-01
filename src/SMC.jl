@@ -17,4 +17,11 @@ include("smc.jl")
 include("kalman.jl")
 include("smc2_inference.jl")
 
+export @NT
+
+module Models
+import ..@NT
+include("models/lineargaussian.jl")
+end
+
 end

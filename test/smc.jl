@@ -1,159 +1,76 @@
-#= using Pkg =#
-#= Pkg.activate(".") =#
-#= Pkg.instantiate() =#
-using Pkg
-using RCall
-using JSON
-using Memoization
-using Test
-using DelimitedFiles
+using LinearAlgebra
+using Random: MersenneTwister
+using Distributions: MvNormal, logpdf
+using StatsFuns: logsumexp
 
-include("../src/kalman.jl")
-include("../src/make_kalman_model.jl")
-include("../src/kalman_train.jl")
-include("../src/PV_source.jl")
-include("../src/smc.jl")
-include("../src/models.jl")
+using SMC.Models: smc_model, LinearGaussian
+using SMC: smc
 
-kalman_dir = pwd()
-root_dir   = kalman_dir * "/../.."
+F0(t)   = [0.0, 0.0, 0.0]
+G0(t)   = [0.0, 0.0, 0.0]
+F(t)    = diagm([1.0, 1.0, 1.0])
+G(t)    = diagm(([1.0, 1.0, 1.0]))
+Σ(t)    = 9.0 * diagm(([1.0, 1.0, 1.0]))
+Tau(t)  = diagm([1.0, 1.0, 1.0])
+μ0      = vcat(0.0, 0.0, 0.0)
+Tau0    = 100.0 * diagm([1.0, 1.0, 1.0])
 
-R"
-setwd($root_dir)
-source('code/src/import_data_box.R')
-prof_data  <- import_data_box('profile_data.RDS', readRDS, use_boxr = FALSE)
-float_data <- import_data_box('float_data.RDS', readRDS, use_boxr = FALSE)
-NULL
-"
+y = [5.22896384735402, 2.059848221254017, 11.77696919584194, 5.721925811242492, 2.647894413351219, 8.833040488128724, 10.112474414603064, 6.208953089526956, 7.483218024927158, 1.1450746725213778, 2.3827281539488214, 2.5154588929528154, 7.6938119335857795, 11.267170019825972, 11.203900809640977, 4.641402249798912, 6.393560809006704, 5.434277785253692, 7.754107613915341, 2.8018519282190573, 8.844915959029999, 6.179788030963477, 8.986422350276268, 8.129873884597485, 10.464689898594969, 7.43846896751153, 6.195006607054435, 7.684383628629019, 6.432819127902091, 9.784040586681458, 3.9386281953008275, 1.0524045623884053, 5.2287370014479535, 3.3793567409786296, 9.109449328047496, 2.4107833351064665, 3.1442786924940815, 8.694980615700167, 9.34957815303634, 1.9899759308134595, 1.7676330607869204, 6.164419273710474, 7.378003270378701, 3.730353213883039, 8.15997706282842, 3.912665621137947, 2.8222087161027987, 7.89108559137954, 2.016432756238303, -0.7283326731242079, 5.34191426139306, 3.7422889485477566, 6.879539434261266, 1.697715484841611, 5.7492808736295835, 3.4683312150848638, 7.897465524526299, 9.358577329317843, 9.01915967340802, 5.098410508423983, 10.161486865442141, 12.905026331072838, 11.193444598591357, 5.284455585283422, 5.403785641006497, 2.984985087125228, -0.1108114821742765, 3.8443055205297396, 1.1335781598255243, 7.313228382179326, 1.1291030218984508, 0.8188795644543472, 13.044240581728545, 4.551403331575773, 5.182374381380807, 4.064021944452551, 13.385904690258663, 2.7383489638189253, 4.272321073129483, 1.936449829003382, 7.579915913135302, 6.891186573209264, 5.696714256363617, 2.9401339639559136, 4.045792031292042, -2.69331630340043, 4.253305831682493, -6.440609695250053, 1.2224659946193035, 3.6232261847393623, 5.212788618742227, -0.5932923334934714, 6.036279124314067, 6.862343503023183, -2.9726591794689665, 4.290653945351619, -2.420184182764869, 0.6612926367123761, 0.6312700637171165, -0.041609972691161345, -0.24839219509891972];
 
-cd(kalman_dir)
+Y = hcat(y, y, y)
+ll_true = -275.019326809115 * 3
+K       = 20
+T       = size(Y, 1)
+smc_fns = smc_model(LinearGaussian(), K, F0, F, G0, G, Tau, Σ, μ0, Tau0, Y)
 
-@rget prof_data
-@rget float_data
+rng     = MersenneTwister(34)
+Xs      = smc_fns.rinit(rng)
+dprs    = smc_fns.dpr(Xs)
+dm1     = smc_fns.dm(Xs, 1)
+dinits  = smc_fns.dinit(Xs)
+dpres   = smc_fns.dpre(Xs, 2)
 
-## Floats
-example_float_id = "5901717"
-prof             = prof_data[prof_data.float .== example_float_id, :]
-myfloat            = float_data[float_data.float .== parse(Float64, example_float_id), :]
+@test size(Xs) == (3, K)
 
-X            = Matrix{Union{Missing, Float64}}(myfloat[:, [:long, :lat]])
-interp       = Vector(myfloat[:, :pos_qc]) .== "8"
-X[interp, :]   .= missing
-
-X
-
-days   = Vector(myfloat.day)
-F0, F, G0, G, Tau, Σ = make_kalman_model(days, 3e-3, 3e-3, 3e-3, 3e-3, 1e-4)
-
-# Make the initial state and variance just the first observation for now
-μ0   = convert(Vector{Float64}, vcat(X[1, :], [0.0, 0.0]))
-Tau0 = diagm([1e-4, 1e-4, 1e-4, 1e-4])
-
-# Set first obs to missing to make up for this
-X_in     = deepcopy(X)
-X_in[1,:].=missing
-
-## MLE
-using Flux
-
-res = train_argo_kalman(X, 3e-3, 3e-3, 3e-3, 3e-3, 1e-4, μ0, Tau0, days, 1000, Flux.Descent(1e-2), 10)
-
-σ_x_long_hat, σ_x_lat_hat, σ_v_long_hat, σ_v_lat_hat, σ_p_hat = exp.(res)
-
-F0, F, G0, G, Tau, Σ = make_kalman_model(days, σ_x_long_hat, σ_x_lat_hat, σ_v_long_hat, σ_v_lat_hat, σ_p_hat)
-ll, states, variances, lls = kalman_filter_mv(F0, F, G0, G, Σ, Tau, μ0, Tau0, X_in)
-states_sm, variances_sm, Covs_sm = kalman_smoother_mv(F0, F, G0, G, Σ, Tau, μ0, Tau0, X_in)
-
-## Now we use the smoothed kalman filter within SMC
-K         = 20
-T         = size(X_in, 1)
-
-G_X    = t -> getindex(G(t), 1:2, :)
-Tau_X  = t -> Symmetric(getindex(Tau(t), 1:2, 1:2))
-Tau_PV = t -> Symmetric(getindex(Tau(t), 3:4, 3:4))
-
-γ         = 1.0
-rng       = MersenneTwister(342)
-
-θ = (σ_x_long = σ_x_long_hat,
-     σ_x_lat = σ_x_lat_hat,
-     σ_v_long = σ_v_long_hat,
-     σ_v_lat = σ_v_lat_hat,
-     σ_p = σ_p_hat,
-     γ = γ)
-
-
-b       = 300
-PV_grad = readdlm(string("../../temp/data/PV", b, ".csv"), ',')
-PV_grad = DataFrame(long = PV_grad[:,1],
-                    lat = PV_grad[:, 2],
-                    long_grad = PV_grad[:,3],
-                    lat_grad = PV_grad[:,4])
-
-modeltype   = ArgoModels.ArgoBaseline()
-smc_model = ArgoModels.smc_model(modeltype, θ, (X_in = deepcopy(X), days=days, PV_grad=PV_grad), K)
-Xs      = smc_model.rinit(rng)
-dprs    = smc_model.dpr(Xs)
-dm1     = smc_model.dm(Xs, 1)
-dinits  = smc_model.dinit(Xs)
-dpres   = smc_model.dpre(Xs, 2)
-
-@test size(Xs) == (6, K)
-
-dpr_actual = logpdf(MvNormal(μ0, Tau0), Xs[1:4, :])
+dpr_actual = logpdf(MvNormal(μ0, Tau0), Xs)
 @test dprs ≈ dpr_actual
 
-dm_actual = fill(0.0, K)
+dm_actual = logpdf(MvNormal(Y[1, :], Σ(1)), Xs)
 @test dm1 ≈ dm_actual
 
 ## The adapted filter should have all weights equal to the total-data likelihood
 logweights = dprs + dm1 - dinits + dpres
-@test all(logweights .≈ ll)
+@test all(logweights .≈ ll_true)
 
-Xs_new = smc_model.rp(rng, Xs, 2)
-dts    = smc_model.dt(Xs, Xs_new, 2)
-dm2    = smc_model.dm(Xs_new, 2)
-dps    = smc_model.dp(Xs, Xs_new, 2)
+Xs_new = smc_fns.rp(rng, Xs, 2)
+dts    = smc_fns.dt(Xs, Xs_new, 2)
+dm2    = smc_fns.dm(Xs_new, 2)
+dps    = smc_fns.dp(Xs, Xs_new, 2)
 
-using Debugger
+#= using Debugger =#
 
-@enter smc_model.rp(rng, Xs, 2)
+#= @enter smc_fns.rp(rng, Xs, 2) =#
 
-@enter smc_model.dt(Xs, Xs_new, 2)
+#= @enter smc_fns.dt(Xs, Xs_new, 2) =#
 
-@test size(Xs_new) == (6, K)
+@test size(Xs_new) == (3, K)
 
-dt_actual  = logpdf(MvNormal(Tau(2)), Xs_new[1:4, :] - G(2)*Xs[1:4, :])
+dt_actual  = logpdf(MvNormal(Tau(2)), Xs_new - G(2)*Xs)
 @test dts ≈ dt_actual
 
-dm_actual = fill(0.0, K)
+dm_actual = logpdf(MvNormal(Y[2, :], Σ(2)), Xs_new)
 @test dm2 ≈ dm_actual
 
-mu_proposal  = states_sm[:, 2] .+ (Covs_sm[:, :, 1] / variances_sm[:, :, 1]) * (Xs[1:4, :] .- states_sm[1:4, 1])
-sig_proposal = variances_sm[:, :, 2] - (Covs_sm[:, :, 1] / variances_sm[:, :, 1]) * Covs_sm[:, :, 1]'
-
-@time smc_out  = smc(rng, T, smc_model...; threshold=0.5, record_history=true);
+@time smc_out  = smc(rng, T, smc_fns...; threshold=0.5, record_history=true);
 
 ## There will still be some slight noise in the particle filter, so this approx may fail
-@test smc_out.loglik ≈ ll
+@test smc_out.loglik ≈ ll_true
 
-@time smc_out  = smc(rng, T, smc_model...; record_history=true, threshold=1.0);
+@time smc_out  = smc(rng, T, smc_fns...; record_history=true, threshold=1.0);
 
 ## There will still be some slight noise in the particle filter, so this approx may fail
-@test smc_out.loglik ≈ ll
+@test smc_out.loglik ≈ ll_true
 
-fwd_weights = smc_out.logweight_history[:, 27] + smc_model.dpre(smc_out.particle_history[:, :, 27], 28)
+fwd_weights = smc_out.logweight_history[:, 27] + smc_fns.dpre(smc_out.particle_history[:, :, 27], 28)
 fwd_w = fwd_weights .- logsumexp(fwd_weights)
 @test all(isapprox.(fwd_w, -log(K)))
-
-
-## Profiling code
-using ProfileView
-
-function profile_smc(rng, T, smc_model, times)
-     for t in 1:times
-          smc_out = smc(rng, T, smc_model...; record_history=true, threshold=1.0)
-     end
-end
-
-ProfileView.@profview profile_smc(rng, T, smc_model, 50)

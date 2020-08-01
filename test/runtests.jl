@@ -1,8 +1,9 @@
 using SMC
 using Test
 
-@testset "SMC.jl" begin
-    @testset "kalman" begin
-        include("kalman.jl")
-    end
+@testset "kalman" begin
+    include("kalman.jl")
+end
+@testset "smc" begin
+    include("smc.jl")
 end
