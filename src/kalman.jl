@@ -1,8 +1,5 @@
 # Kalman filter code.
 # Please see Lopes Tsay 2011 "Particle Filters and Bayesian Inference In Financial Econometrics"
-function normal_logpdf(Σ, ϵ)
-    (-0.5 * ϵ' * (Σ \ ϵ))[1] - 0.5 * logdet(Σ) - 0.5 * size(Σ, 1) * log(2*π)
-end
 
 function push_state_forward(G0, G1, Tau, m, V)
     a_t = G0 + G1 * m
@@ -14,7 +11,7 @@ function calc_loglik_t(F0, F1, Σ, a_t, R_t, y_t)
     f_t = F0 + F1 * a_t
     Q_t = F1 * R_t * F1' + Σ
     e_t = (y_t - f_t)
-    loglik = normal_logpdf(Symmetric(Q_t), e_t)
+    loglik = logpdf(MvNormal(Symmetric(Q_t)), e_t)[1]
     return e_t, Q_t, loglik
 end
 
