@@ -4,15 +4,13 @@ using LinearAlgebra
 
 function push_state_forward(G0, G1, Tau, m, V)
     a_t = G0 + G1 * m
-    R_t = Symmetric(G1*V*G1') + Symmetric(Tau)
-    @assert isposdef(R_t)
+    R_t = G1 * Symmetric(V) * G1' + Symmetric(Tau)
     return a_t, R_t
 end
 
 function calc_loglik_t(F0, F1, Σ, a_t, R_t, y_t)
     f_t = F0 + F1 * a_t
-    Q_t = Symmetric(F1 * R_t * F1') + Symmetric(Σ)
-    @assert isposdef(Q_t)
+    Q_t = F1 * Symmetric(R_t) * F1' + Symmetric(Σ)
     e_t = (y_t - f_t)
     loglik = logpdf(MvNormal(Symmetric(Q_t)), e_t)[1]
     return e_t, Q_t, loglik
@@ -22,8 +20,7 @@ function update_state(F1, a_t, R_t, e_t, Q_t)
     # Kalman Gain
     A_t = R_t * F1' / Q_t
     m_t = a_t + A_t * e_t
-    V_t = Symmetric(R_t) - Symmetric(A_t' * Q_t * A_t')
-    @assert isposdef(V_t)
+    V_t = Symmetric(R_t) - A_t * Symmetric(Q_t) * A_t'
     return m_t, V_t
 end
 
