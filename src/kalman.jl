@@ -37,7 +37,7 @@ function iterate_kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, m, V, y_t)
     return m_t, V_t, loglik
 end
 
-function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
+function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
     T      = size(Y)[1]
     m      = deepcopy(μ0)
     ms     = repeat(m, outer=[1, T])
@@ -46,39 +46,65 @@ function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
     P      = inv(V)
     loglik = zero(μ0[1])
 
-    loglik_t = fill(loglik, T)
+    if mutate
+        ms       = repeat(m, outer=[1, T])
+        Vs       = repeat(V, outer = [1, 1, T])
+        logliks  = fill(loglik, T)
+    else
+        ms       = m
+        Vs       = V
+        logliks  = missing
+    end
+
 
     if !(any(ismissing.(Y[1, :])))
-        e_t, Q_t, loglik_t[1] = calc_loglik_t(F0(1), F1(1), Σ(1), m, V, @view(Y[1, :]))
-        loglik            += loglik_t[1]
+        e_t, Q_t, loglik_t = calc_loglik_t(F0(1), F1(1), Σ(1), m, V, @view(Y[1, :]))
+        loglik            += loglik_t
         m, V               = update_state(F1(1), m, V, e_t, Q_t)
-        ms[:, 1]           = m
-        Vs[:, :, 1]         = V
+        if mutate
+            ms[:, 1]           = m
+            Vs[:, :, 1]         = V
+            logliks[t]         = loglik_t
+        else
+            ms = m
+            Vs = V
+            logliks=missing
+        end
     else
         loglik += 0.0
     end
 
     if (T > 1)
-        for t in 2:T
-            # Push system forward
-            if !any(ismissing.(Y[t, :]))
-                m, V, loglik_t[t] = iterate_kalman_filter_mv(F0(t), F1(t),
-                                                          G0(t), G1(t),
-                                                          Σ(t), Tau(t),
-                                                          m, V, @view(Y[t, :]))
-                loglik += loglik_t[t]
-            else
-                m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
+        ms, Vs = let ms=ms, Vs=Vs
+            for t in 2:T
+                # Push system forward
+                if !any(ismissing.(Y[t, :]))
+                    m, V, loglik_t = iterate_kalman_filter_mv(F0(t), F1(t),
+                                                            G0(t), G1(t),
+                                                            Σ(t), Tau(t),
+                                                            m, V, @view(Y[t, :]))
+                    loglik += loglik_t
+                else
+                    m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
+                    loglik_t = 0
+                end
+                if mutate
+                    ms[:, t] = m
+                    Vs[:, :, t] = V
+                    logliks[t] = 0
+                else
+                    ms = hcat(ms, m)
+                    Vs = cat(Vs, V; dims=3)
+                end
             end
-            ms[:, t] = m
-            Vs[:, :, t] = V
+            ms, Vs
         end
     end
 
-    return loglik, ms, Vs, loglik_t
+    return loglik, ms, Vs, logliks
 end
 
-Zygote.@nograd kalman_filter_mv
+# Zygote.@nograd kalman_filter_mv
 
 function kalman_loglik(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
     T      = size(Y)[1]
@@ -118,37 +144,60 @@ function kalman_loglik(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
 end
 ## Smoother
 
-function kalman_smoother_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
+function kalman_smoother_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
     T              = size(Y)[1]
 
-    loglik, ms, Vs = kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
+    loglik, ms, Vs = kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=mutate)
     D              = size(ms, 1)
-    ms_smoothed    = deepcopy(ms)
-    Vs_smoothed    = deepcopy(Vs)
 
-    ms_smoothed[:, 1:(end-1)] .= NaN
-    Vs_smoothed[:, :, 1:(end-1)] .= NaN
+    if mutate
+        ms_smoothed    = deepcopy(ms)
+        Vs_smoothed    = deepcopy(Vs)
 
-    Covs_smoothed = zeros(eltype(ms_smoothed), D, D, T-1)
+        ms_smoothed[:, 1:(end-1)] .= NaN
+        Vs_smoothed[:, :, 1:(end-1)] .= NaN
+
+        Covs_smoothed = zeros(eltype(ms_smoothed), D, D, T-1)
+    else
+        ms_smoothed   = ms[:, end]
+        Vs_smoothed   = Vs[:, :, end]
+        Covs_smoothed = Array{eltype(ms_smoothed)}(undef, D, D, 0)
+    end
 
     if (T > 1)
-        for t in (T-1):-1:1
-            m_smoothed, V_smoothed, Cov_smoothed = backward_smooth_step_mv(G0(t+1), G1(t+1),
-                                                             Tau(t+1),
-                                                             view(ms, :, t),
-                                                             view(Vs, :, :, t),
-                                                             view(ms_smoothed, :, t+1),
-                                                             view(Vs_smoothed, :, :, t+1))
-            ms_smoothed[:, t] = m_smoothed
-            Vs_smoothed[:, :, t] = V_smoothed
-            Covs_smoothed[:, :, t] = Cov_smoothed
+        ms_smoothed, Vs_smoothed, Covs_smoothed = let ms_smoothed=ms_smoothed, Vs_smoothed=Vs_smoothed, Covs_smoothed=Covs_smoothed
+            for t in (T-1):-1:1
+                if mutate
+                    ms_next = view(ms_smoothed, :, t+1)
+                    Vs_next = view(Vs_smoothed, :, :, t+1)
+                else
+                    ms_next = view(ms_smoothed, :, 1)
+                    Vs_next = view(Vs_smoothed, :, :, 1)
+                end
+                m_smoothed, V_smoothed, Cov_smoothed = backward_smooth_step_mv(G0(t+1), G1(t+1),
+                                                                Tau(t+1),
+                                                                view(ms, :, t),
+                                                                view(Vs, :, :, t),
+                                                                ms_next,
+                                                                Vs_next)
+                if mutate
+                    ms_smoothed[:, t] = m_smoothed
+                    Vs_smoothed[:, :, t] = V_smoothed
+                    Covs_smoothed[:, :, t] = Cov_smoothed
+                else
+                    ms_smoothed = hcat(m_smoothed, ms_smoothed)
+                    Vs_smoothed = cat(V_smoothed, Vs_smoothed; dims=3)
+                    Covs_smoothed = cat(Cov_smoothed, Covs_smoothed; dims=3)
+                end
+            end
+            ms_smoothed, Vs_smoothed, Covs_smoothed
         end
     end
 
     return ms_smoothed, Vs_smoothed, Covs_smoothed
 end
 
-Zygote.@nograd kalman_smoother_mv
+# Zygote.@nograd kalman_smoother_mv
 
 
 function backward_smooth_step_mv(G0, G1, Tau, m_t, V_t, m_tp1_sm, V_tp1_sm)
@@ -173,23 +222,26 @@ function draw_posterior_path(rng, ms, Vs, G0, G1, Σ, Tau, μ0, Tau0; mutate=tru
     end
 
     if (T > 1)
-        for t in (T-1):-1:1
-            if mutate
-                Xs_next = view(Xs_smoothed, :, t+1)
-            else
-                Xs_next = view(Xs_smoothed, :, 1)
+        Xs_smoothed = let Xs_smoothed=Xs_smoothed
+            for t in (T-1):-1:1
+                if mutate
+                    Xs_next = view(Xs_smoothed, :, t+1)
+                else
+                    Xs_next = view(Xs_smoothed, :, 1)
+                end
+                m_smoothed, V_smoothed, _ = backward_smooth_step_mv(G0(t+1), G1(t+1),
+                                                                Tau(t+1),
+                                                                view(ms, :, t),
+                                                                view(Vs, :, :, t),
+                                                                Xs_next,
+                                                                V_fill_in)
+                if mutate
+                    Xs_smoothed[:, t] = rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed)))
+                else
+                    Xs_smoothed = hcat(rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed))), Xs_smoothed)
+                end
             end
-            m_smoothed, V_smoothed, _ = backward_smooth_step_mv(G0(t+1), G1(t+1),
-                                                             Tau(t+1),
-                                                             view(ms, :, t),
-                                                             view(Vs, :, :, t),
-                                                             Xs_next,
-                                                             V_fill_in)
-            if mutate
-                Xs_smoothed[:, t] = rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed)))
-            else
-                Xs_smoothed = hcat(rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed))), Xs_smoothed)
-            end
+            Xs_smoothed
         end
     end
 
