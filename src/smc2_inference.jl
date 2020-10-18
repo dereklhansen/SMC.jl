@@ -110,10 +110,12 @@ end
 # This is a batch function which will run a filter from 1:T for a given vector of parameters in parallel
 
 function dt_smc2_estimation(thetas, loglik_fun, prior_fun;
-    grid_steps=1e-8, ess_threshold=0.5, kwargs...)
+    grid_steps=1e-8, ess_threshold=0.5, pmcmc_theta_steps=10, kwargs...)
     N_θ = length(thetas)
    logliks = pmap(loglik_fun, thetas)
    ξ       = 0.0;
+
+   acceptances = Array{Bool, 3}(undef, N_θ, pmcmc_theta_steps, 0)
 
    while ξ < 1.0
        print(crayon"blue", "Picking new value for ξ\n")
@@ -126,10 +128,11 @@ function dt_smc2_estimation(thetas, loglik_fun, prior_fun;
 
        print(crayon"blue", "Xi set to ", ξ, "\n", "ESS = ", ess, "\n")
 
-       thetas, logliks = density_tempered_pmcmc(thetas, logliks, loglik_fun, prior_fun, ξ, ξ_diff; kwargs...)
+       thetas, logliks, acceptances_i = density_tempered_pmcmc(thetas, logliks, loglik_fun, prior_fun, ξ, ξ_diff; pmcmc_theta_steps=pmcmc_theta_steps, kwargs...)
+       acceptances = cat(acceptances, acceptances_i; dims=3)
    end
 
-   return thetas, logliks
+   return thetas, logliks, acceptances
 end
 
 function density_tempered_pmcmc(thetas, logliks, loglik_fun, prior_fun, ξ, ξ_diff; pmcmc_theta_steps=10, rprop_pmh = smc_pmcmc_proposal, dprop_pmh = smc_pmcmc_proposal_logdens, kwargs...)
@@ -161,7 +164,7 @@ function density_tempered_pmcmc(thetas, logliks, loglik_fun, prior_fun, ξ, ξ_d
         print(crayon"green", @sprintf("Step %02d: Accepted %0.2f; Filter time: %f secs \n", step_idx, mean(acceptances[:, step_idx]), timetaken.value/1000))
    end
    print(crayon"green", @sprintf("Total θ moved at least once: %0.2f \n", mean(any(acceptances, dims=2))))
-   return thetas, logliks
+   return thetas, logliks, acceptances
 end
 
 function pmcmc_propose_accept_reject(theta, loglik, loglik_fun, prior_fun, ξ, pmcmc_mean, pmcmc_cov, rprop_pmh, dprop_pmh)
