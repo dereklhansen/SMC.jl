@@ -126,7 +126,7 @@ function dt_smc2_estimation(thetas, loglik_fun, prior_fun;
 
        ξ = min(ξ_diff + ξ, 1.0)
 
-       print(crayon"blue", "Xi set to ", ξ, "\n", "ESS = ", ess, "\n")
+       print(crayon"blue", @sprintf("Xi set to %.3e\nESS = %.3f\n", ξ, ess))
 
        thetas, logliks, acceptances_i = density_tempered_pmcmc(thetas, logliks, loglik_fun, prior_fun, ξ, ξ_diff; pmcmc_theta_steps=pmcmc_theta_steps, kwargs...)
        acceptances = cat(acceptances, acceptances_i; dims=3)
@@ -141,8 +141,13 @@ function density_tempered_pmcmc(thetas, logliks, loglik_fun, prior_fun, ξ, ξ_d
 
     ws          = exp.(log_ws .- maximum(log_ws))
     pmcmc_mean, pmcmc_cov = pmcmc_mean_cov(thetas, log_ws)
-    @show pmcmc_mean
-    @show pmcmc_cov
+    println("Param"*repeat(" ", 11)*"\tMean\t\tStd\t\t")
+    for i in 1:length(pmcmc_mean)
+        name = first(string(keys(thetas[1])[i]), 16)
+        name *= repeat(" ", 17 - length(name))
+        p_str = @sprintf("%s\t%.3e\t%.3e", name, pmcmc_mean[i], sqrt(pmcmc_cov[i,i]))
+        println(p_str)
+    end
 
     # A                 = wsample(1:N_θ, ws, N_θ)
     A                 = residual_resample(Random.GLOBAL_RNG, ws, N_θ)
