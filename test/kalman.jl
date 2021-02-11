@@ -32,6 +32,18 @@ loglik, _, _ = SMC.kalman_filter_mv((t) -> hcat(0.0), F, (t) -> hcat(0.0), G, Σ
 
 @inferred SMC.kalman_filter_mv((t) -> hcat(0.0), F, (t) -> hcat(0.0), G, Σ, Tau, μ0, Tau0, Y)
 
+model_nomutate = SMC.KalmanModel(
+                        mutate=false,
+    F0=(t) -> hcat(0.0), 
+F1=F, 
+G0=(t) -> hcat(0.0),
+ G1=G,
+  Σ=Σ, 
+  Tau=Tau, 
+  μ0=μ0, 
+  Tau0=Tau0)
+
+@inferred model_nomutate(Y)
 
 # Test is a 3-dimensional concatenation
 # Should be 3x the log-likelihood above

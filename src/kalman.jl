@@ -54,25 +54,42 @@ function Base.show(io::IO, x::KalmanModel{mutate}) where mutate
     print(io, "mutate=", mutate)
 end
 
-function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
-    m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=mutate)
+function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
+    m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=true)
     @show m
     loglik, state = m(Y)
     return loglik, state.ms, state.Vs, state.logliks
 end
 
-function init_kalman_state(model, T, m, V, loglik)
+function kalman_filter_mv_nomutate(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
+    m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=false)
+    @show m
+    loglik, state = m(Y)
+    return loglik, state.ms, state.Vs, state.logliks
+end
+
+function init_kalman_state(::KalmanModel{true}, T, m, V, loglik)
     ms     = repeat(m, outer=(1, T))
     Vs     = repeat(V, outer = (1, 1, T))
     logliks  = fill(loglik, T)
     return @NT(ms, Vs, logliks)
 end
 
-function update_kalman_state!(model, state, t, m, V, loglik_t)
+function init_kalman_state(::KalmanModel{false}, T, m, V, loglik)
+    return (ms=m, Vs=reshape(V, size(V, 1), size(V, 2), 1))
+end
+
+function update_kalman_state!(::KalmanModel{true}, state, t, m, V, loglik_t)
     state.ms[:, t] = m
     state.Vs[:, :, t] = V
     state.logliks[t] = loglik_t
     return state
+end
+cat3(args...) = cat(args...; dims=Val(3))
+function update_kalman_state!(::KalmanModel{false}, state, t, m::Array{Float64, 2}, V::Array{Float64, 2}, loglik_t::Float64)
+    ms = hcat(state.ms, m)
+    Vs = cat3(state.Vs, reshape(V, size(V, 1), size(V, 2), 1))
+    return (ms=ms, Vs=Vs)
 end
 
 function (model::KalmanModel)(Y)
@@ -84,7 +101,6 @@ function (model::KalmanModel)(Y)
     loglik = zero(θ.μ0[1])
 
     state  = init_kalman_state(model, T, m, V, loglik)
-
     if !(any(ismissing.(Y[1, :])))
         e_t, Q_t, loglik_t = calc_loglik_t(θ.F0(1), θ.F1(1), θ.Σ(1), m, V, @view(Y[1, :]))
         loglik            += loglik_t
