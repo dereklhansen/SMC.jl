@@ -23,9 +23,6 @@ function update_state(F1, a_t, R_t, e_t, Q_t)
     return m_t, V_t
 end
 
-
-
-
 function iterate_kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, m, V, y_t)
     # Push the state forward
     a_t, R_t = push_state_forward(G0, G1, Tau, m, V)
@@ -37,92 +34,106 @@ function iterate_kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, m, V, y_t)
     return m_t, V_t, loglik
 end
 
-function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
-    T      = size(Y)[1]
-    m      = deepcopy(μ0)
-    ms     = repeat(m, outer=[1, T])
-    V      = deepcopy(Tau0)
-    Vs     = repeat(V, outer = [1, 1, T])
-    P      = inv(V)
-    loglik = zero(μ0[1])
-
-    loglik_t = fill(loglik, T)
-
-    if !(any(ismissing.(Y[1, :])))
-        e_t, Q_t, loglik_t[1] = calc_loglik_t(F0(1), F1(1), Σ(1), m, V, @view(Y[1, :]))
-        loglik            += loglik_t[1]
-        m, V               = update_state(F1(1), m, V, e_t, Q_t)
-        ms[:, 1]           = m
-        Vs[:, :, 1]         = V
+struct KalmanModel{mutate, T <: Any}
+    θ::T
+end
+function KalmanModel(;kwargs...)
+    if haskey(kwargs, :mutate)
+        mutate = kwargs[:mutate]
     else
-        loglik += 0.0
+        mutate = true
+    end
+    KalmanModel{mutate, typeof(kwargs.data)}(kwargs.data)
+end
+
+function Base.show(io::IO, x::KalmanModel{mutate}) where mutate
+    print(io, "KalmanModel(θ=", x.θ, ")\n")
+    print(io, "mutate=", mutate)
+end
+
+function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
+    m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=true)
+    @show m
+    loglik, state = m(Y)
+    return loglik, state.ms, state.Vs, state.logliks
+end
+
+function kalman_filter_mv_nomutate(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
+    m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=false)
+    loglik, state = m(Y)
+    return loglik, state.ms, state.Vs, state.logliks
+end
+
+function init_kalman_state(::KalmanModel{true}, T, m, V, loglik)
+    ms     = repeat(m, outer=(1, T))
+    Vs     = repeat(V, outer = (1, 1, T))
+    logliks  = fill(loglik, T)
+    return @NT(ms, Vs, logliks)
+end
+
+function init_kalman_state(::KalmanModel{false}, T, m, V, loglik)
+    return (ms=m, Vs=reshape(V, size(V, 1), size(V, 2), 1))
+end
+
+function update_kalman_state!(::KalmanModel{true}, state, t, m, V, loglik_t)
+    state.ms[:, t] = m
+    state.Vs[:, :, t] = V
+    state.logliks[t] = loglik_t
+    return state
+end
+cat3(args...) = cat(args...; dims=Val(3))
+function update_kalman_state!(::KalmanModel{false}, state, t, m::Array{Float64, 2}, V::Array{Float64, 2}, loglik_t::Float64)
+    ms = hcat(state.ms, m)
+    Vs = cat3(state.Vs, reshape(V, size(V, 1), size(V, 2), 1))
+    return (ms=ms, Vs=Vs)
+end
+
+function (model::KalmanModel)(Y)
+    θ = model.θ
+    T      = size(Y)[1]
+    m      = deepcopy(reshape(θ.μ0, :, 1))
+    V      = deepcopy(θ.Tau0)
+    P      = inv(V)
+    loglik = zero(θ.μ0[1])
+
+    state  = init_kalman_state(model, T, m, V, loglik)
+    if !(any(ismissing.(Y[1, :])))
+        e_t, Q_t, loglik_t = calc_loglik_t(θ.F0(1), θ.F1(1), θ.Σ(1), m, V, @view(Y[1, :]))
+        loglik            += loglik_t
+        m, V               = update_state(θ.F1(1), m, V, e_t, Q_t)
+        state = update_kalman_state!(model, state, 1, m, V, loglik_t)
+    else
+        loglik += zero(loglik)
     end
 
     if (T > 1)
-        for t in 2:T
-            # Push system forward
-            if !any(ismissing.(Y[t, :]))
-                m, V, loglik_t[t] = iterate_kalman_filter_mv(F0(t), F1(t),
-                                                          G0(t), G1(t),
-                                                          Σ(t), Tau(t),
-                                                          m, V, @view(Y[t, :]))
-                loglik += loglik_t[t]
-            else
-                m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
+            for t in 2:T
+                # Push system forward
+                if !any(ismissing.(Y[t, :]))
+                    m, V, loglik_t = iterate_kalman_filter_mv(θ.F0(t), θ.F1(t),
+                                                            θ.G0(t), θ.G1(t),
+                                                            θ.Σ(t), θ.Tau(t),
+                                                            m, V, @view(Y[t, :]))
+                    loglik += loglik_t
+                else
+                    m, V = push_state_forward(θ.G0(t), θ.G1(t), θ.Tau(t), m, V)
+                    loglik_t = zero(loglik)
+                end
+                state = update_kalman_state!(model, state, t, m, V, loglik_t)
             end
-            ms[:, t] = m
-            Vs[:, :, t] = V
-        end
     end
 
-    return loglik, ms, Vs, loglik_t
+    return loglik, state
 end
 
 Zygote.@nograd kalman_filter_mv
 
-function kalman_loglik(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
-    T      = size(Y)[1]
-    m      = deepcopy(μ0)
-    V      = deepcopy(Tau0)
-    P      = inv(V)
-    loglik = zero(μ0[1])
-
-    if !(any(ismissing.(Y[1, :])))
-        e_t, Q_t, loglik_1 = calc_loglik_t(F0(1), F1(1), Σ(1), m, V, @view(Y[1, :]))
-        loglik            += loglik_1
-        m, V               = update_state(F1(1), m, V, e_t, Q_t)
-        # ms[:, 1]           = m
-        # Vs[:, :, 1]         = V
-    else
-        loglik += 0.0
-    end
-
-    if (T > 1)
-        for t in 2:T
-            # Push system forward
-            if !any(ismissing.(Y[t, :]))
-                m, V, loglik_t = iterate_kalman_filter_mv(F0(t), F1(t),
-                                                          G0(t), G1(t),
-                                                          Σ(t), Tau(t),
-                                                          m, V, @view(Y[t, :]))
-                loglik += loglik_t
-            else
-                m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
-            end
-            # ms[:, t] = m
-            # Vs[:, :, t] = V
-        end
-    end
-
-    return loglik
-end
-## Smoother
-
 function kalman_smoother_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
-    T              = size(Y)[1]
+    m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=true)
+    smooth(m, Y)
+end
 
-    loglik, ms, Vs = kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
-    D              = size(ms, 1)
+function init_smooth_state(::KalmanModel{true}, D, T, ms, Vs)
     ms_smoothed    = deepcopy(ms)
     Vs_smoothed    = deepcopy(Vs)
 
@@ -130,22 +141,68 @@ function kalman_smoother_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
     Vs_smoothed[:, :, 1:(end-1)] .= NaN
 
     Covs_smoothed = zeros(eltype(ms_smoothed), D, D, T-1)
+    state = @NT(ms_smoothed, Vs_smoothed, Covs_smoothed)
+end
+
+function init_smooth_state(::KalmanModel{false}, D, T, ms, Vs)
+    ms_smoothed   = ms[:, end:end]
+    Vs_smoothed   = Vs[:, :, end:end]
+    Covs_smoothed = Array{eltype(ms_smoothed)}(undef, D, D, 0)
+    state = @NT(ms_smoothed, Vs_smoothed, Covs_smoothed)
+end
+
+function get_smooth_mean_cov(::KalmanModel{true}, state, t)
+    ms_next = view(state.ms_smoothed, :, t+1)
+    Vs_next = view(state.Vs_smoothed, :, :, t+1)
+    return ms_next, Vs_next
+end
+
+function get_smooth_mean_cov(::KalmanModel{false}, state, t)
+    ms_next = view(state.ms_smoothed, :, 1)
+    Vs_next = view(state.Vs_smoothed, :, :, 1)
+    return ms_next, Vs_next
+end
+
+function update_smooth_state!(::KalmanModel{true}, state, t, m_smoothed, V_smoothed, Cov_smoothed)
+    state.ms_smoothed[:, t] = m_smoothed
+    state.Vs_smoothed[:, :, t] = V_smoothed
+    state.Covs_smoothed[:, :, t] = Cov_smoothed
+    return state
+end
+
+function update_smooth_state!(::KalmanModel{false}, state, t, m_smoothed, V_smoothed, Cov_smoothed)
+    ms_smoothed = hcat(m_smoothed, state.ms_smoothed)
+    Vs_smoothed = cat3(V_smoothed, state.Vs_smoothed)
+    Covs_smoothed = cat3(Cov_smoothed, state.Covs_smoothed)
+    state = @NT(ms_smoothed, Vs_smoothed, Covs_smoothed)
+end
+
+function smooth(model::KalmanModel, Y)
+    θ              = model.θ
+    T              = size(Y)[1]
+
+    loglik, filt_state  = model(Y)
+    ms = filt_state.ms
+    Vs = filt_state.Vs
+    D              = size(ms, 1)
+
+    state = init_smooth_state(model, D, T, ms, Vs)
 
     if (T > 1)
-        for t in (T-1):-1:1
-            m_smoothed, V_smoothed, Cov_smoothed = backward_smooth_step_mv(G0(t+1), G1(t+1),
-                                                             Tau(t+1),
-                                                             view(ms, :, t),
-                                                             view(Vs, :, :, t),
-                                                             view(ms_smoothed, :, t+1),
-                                                             view(Vs_smoothed, :, :, t+1))
-            ms_smoothed[:, t] = m_smoothed
-            Vs_smoothed[:, :, t] = V_smoothed
-            Covs_smoothed[:, :, t] = Cov_smoothed
-        end
+            for t in (T-1):-1:1
+                ms_next, Vs_next = get_smooth_mean_cov(model, state, t)
+                m_smoothed, V_smoothed, Cov_smoothed = backward_smooth_step_mv(θ.G0(t+1), θ.G1(t+1),
+                                                                θ.Tau(t+1),
+                                                                view(ms, :, t),
+                                                                view(Vs, :, :, t),
+                                                                ms_next,
+                                                                Vs_next)
+                state = update_smooth_state!(model, state, t, m_smoothed, V_smoothed, Cov_smoothed)
+
+            end
     end
 
-    return ms_smoothed, Vs_smoothed, Covs_smoothed
+    return state
 end
 
 Zygote.@nograd kalman_smoother_mv

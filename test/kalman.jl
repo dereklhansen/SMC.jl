@@ -20,12 +20,30 @@ ll_tuple = SMC.calc_loglik_t(hcat(0.0), F(1), Σ(1), μ0, Tau0, Y[1, :])
 update_tuple = SMC.update_state(F(1), μ0, Tau0, ll_tuple[1], ll_tuple[2])
 @test size(update_tuple[1]) == (1,1)
 @test size(update_tuple[2]) == (1,1)
-
+m, V, loglik_t = SMC.iterate_kalman_filter_mv(vcat(0.0), F(1),
+                                          vcat(0.0), G(1),
+                                        Σ(1), Tau(1),
+                                        μ0, Tau0, @view(Y[1, :]))
 loglik, _, _ = SMC.kalman_filter_mv((t) -> hcat(0.0), F, (t) -> hcat(0.0), G, Σ,
                                        Tau, μ0, Tau0, Y)
 
+
 @test loglik ≈ -275.019326809115
 
+@inferred SMC.kalman_filter_mv((t) -> hcat(0.0), F, (t) -> hcat(0.0), G, Σ, Tau, μ0, Tau0, Y)
+
+model_nomutate = SMC.KalmanModel(
+                        mutate=false,
+    F0=(t) -> hcat(0.0), 
+F1=F, 
+G0=(t) -> hcat(0.0),
+ G1=G,
+  Σ=Σ, 
+  Tau=Tau, 
+  μ0=μ0, 
+  Tau0=Tau0)
+
+@inferred model_nomutate(Y)
 
 # Test is a 3-dimensional concatenation
 # Should be 3x the log-likelihood above
@@ -98,4 +116,4 @@ ll_pt4, ms, Vs  = SMC.kalman_filter_mv(F0, F, G0, G, Σ, Tau, m_next, V_next, Y[
 ms_smoothed, Vs_smoothed = SMC.kalman_smoother_mv(F0, F, G0, G, Σ, Tau, μ0, Tau0, Y_missing)
 @test size(ms_smoothed) == (3, 101)
 @test size(Vs_smoothed) == (3, 3, 101)
-
+@inferred SMC.kalman_smoother_mv(F0, F, G0, G, Σ, Tau, μ0, Tau0, Y_missing)
