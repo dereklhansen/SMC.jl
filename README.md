@@ -1,4 +1,3 @@
 # SMC
-
-[![Build Status](https://travis-ci.com/dereklhansen/SMC.jl.svg?branch=master)](https://travis-ci.com/dereklhansen/SMC.jl)
+![tests](https://github.com/dereklhansen/SMC.jl/workflows/tests/badge.svg)
 [![Coverage](https://codecov.io/gh/dereklhansen/SMC.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/dereklhansen/SMC.jl)
