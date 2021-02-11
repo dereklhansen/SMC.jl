@@ -1,0 +1,49 @@
+name: tests
+
+on:
+  push:
+    branches: ['main', 'master', 'releases/*']
+  pull_request:
+
+env:
+  WEBDAV_USERNAME: ${{secrets.WEBDAV_USERNAME}}
+  WEBDAV_PASSWORD: ${{secrets.WEBDAV_PASSWORD}}
+  CODECOV_TOKEN: ${{secrets.CODECOV_TOKEN}}
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ['1.5.3']
+        julia-arch: [x64]
+        os: [ubuntu-latest]
+
+    steps:
+      - name: "Checkout repo"
+        uses: actions/checkout@v1.0.0
+      - name: Cache Julia install directory
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.julia
+          key: ${{ runner.os }}
+      - name: "Set up Julia"
+        uses: julia-actions/setup-julia@v1
+        with:
+          version: ${{ matrix.julia-version }}
+          arch: ${{ matrix.julia-arch }}
+      - run: julia --version
+      - run: julia --compile=min -O0 -e 'import InteractiveUtils; InteractiveUtils.versioninfo()'
+      - run: |
+          julia --project=. -e 'using Pkg; Pkg.build(verbose=True); Pkg.test(coverage=True)'
+      - name: "Process code coverage:"
+        run: |
+          cd ./code
+          julia --project=. -e 'using Coverage; x=Codecov.process_folder();LCOV.writefile("lcov.info", x)'
+          cd ..
+      - name: "Upload code coverage"
+        uses: codecov/codecov-action@v1
+        with:
+          file: ./code/lcov.info
