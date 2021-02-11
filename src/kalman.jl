@@ -130,7 +130,7 @@ function (model::KalmanModel)(Y)
     return loglik, state
 end
 
-# Zygote.@nograd kalman_filter_mv
+Zygote.@nograd kalman_filter_mv
 
 function kalman_smoother_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
     m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=true)
@@ -209,7 +209,7 @@ function smooth(model::KalmanModel, Y)
     return state
 end
 
-# Zygote.@nograd kalman_smoother_mv
+Zygote.@nograd kalman_smoother_mv
 
 
 function backward_smooth_step_mv(G0, G1, Tau, m_t, V_t, m_tp1_sm, V_tp1_sm)
@@ -234,26 +234,23 @@ function draw_posterior_path(rng, ms, Vs, G0, G1, Σ, Tau, μ0, Tau0; mutate=tru
     end
 
     if (T > 1)
-        Xs_smoothed = let Xs_smoothed=Xs_smoothed
-            for t in (T-1):-1:1
-                if mutate
-                    Xs_next = view(Xs_smoothed, :, t+1)
-                else
-                    Xs_next = view(Xs_smoothed, :, 1)
-                end
-                m_smoothed, V_smoothed, _ = backward_smooth_step_mv(G0(t+1), G1(t+1),
-                                                                Tau(t+1),
-                                                                view(ms, :, t),
-                                                                view(Vs, :, :, t),
-                                                                Xs_next,
-                                                                V_fill_in)
-                if mutate
-                    Xs_smoothed[:, t] = rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed)))
-                else
-                    Xs_smoothed = hcat(rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed))), Xs_smoothed)
-                end
+        for t in (T-1):-1:1
+            if mutate
+                Xs_next = view(Xs_smoothed, :, t+1)
+            else
+                Xs_next = view(Xs_smoothed, :, 1)
             end
-            Xs_smoothed
+            m_smoothed, V_smoothed, _ = backward_smooth_step_mv(G0(t+1), G1(t+1),
+                                                             Tau(t+1),
+                                                             view(ms, :, t),
+                                                             view(Vs, :, :, t),
+                                                             Xs_next,
+                                                             V_fill_in)
+            if mutate
+                Xs_smoothed[:, t] = rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed)))
+            else
+                Xs_smoothed = hcat(rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed))), Xs_smoothed)
+            end
         end
     end
 
