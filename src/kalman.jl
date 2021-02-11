@@ -37,52 +37,81 @@ function iterate_kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, m, V, y_t)
     return m_t, V_t, loglik
 end
 
-# function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
-function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
-    T      = size(Y)[1]
-    m      = deepcopy(reshape(μ0, :, 1))
-    V      = deepcopy(Tau0)
-    P      = inv(V)
-    loglik = zero(μ0[1])
+struct KalmanModel{mutate, T <: Any}
+    θ::T
+end
+function KalmanModel(;kwargs...)
+    if haskey(kwargs, :mutate)
+        mutate = kwargs[:mutate]
+    else
+        mutate = true
+    end
+    KalmanModel{mutate, typeof(kwargs.data)}(kwargs.data)
+end
 
+function Base.show(io::IO, x::KalmanModel{mutate}) where mutate
+    print(io, "KalmanModel(θ=", x.θ, ")\n")
+    print(io, "mutate=", mutate)
+end
+
+function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
+    m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=mutate)
+    @show m
+    loglik, state = m(Y)
+    return loglik, state.ms, state.Vs, state.logliks
+end
+
+function init_kalman_state(model, T, m, V, loglik)
     ms     = repeat(m, outer=(1, T))
     Vs     = repeat(V, outer = (1, 1, T))
     logliks  = fill(loglik, T)
+    return @NT(ms, Vs, logliks)
+end
+
+function update_kalman_state!(model, state, t, m, V, loglik_t)
+    state.ms[:, t] = m
+    state.Vs[:, :, t] = V
+    state.logliks[t] = loglik_t
+    return state
+end
+
+function (model::KalmanModel)(Y)
+    θ = model.θ
+    T      = size(Y)[1]
+    m      = deepcopy(reshape(θ.μ0, :, 1))
+    V      = deepcopy(θ.Tau0)
+    P      = inv(V)
+    loglik = zero(θ.μ0[1])
+
+    state  = init_kalman_state(model, T, m, V, loglik)
 
     if !(any(ismissing.(Y[1, :])))
-        e_t, Q_t, loglik_t = calc_loglik_t(F0(1), F1(1), Σ(1), m, V, @view(Y[1, :]))
+        e_t, Q_t, loglik_t = calc_loglik_t(θ.F0(1), θ.F1(1), θ.Σ(1), m, V, @view(Y[1, :]))
         loglik            += loglik_t
-        m, V               = update_state(F1(1), m, V, e_t, Q_t)
-        ms[:, 1]           = m
-        Vs[:, :, 1]         = V
-        logliks[1]         = loglik_t
+        m, V               = update_state(θ.F1(1), m, V, e_t, Q_t)
+        state = update_kalman_state!(model, state, 1, m, V, loglik_t)
     else
         loglik += zero(loglik)
     end
 
     if (T > 1)
-        ms, Vs = let ms=ms, Vs=Vs
             for t in 2:T
                 # Push system forward
                 if !any(ismissing.(Y[t, :]))
-                    m, V, loglik_t = iterate_kalman_filter_mv(F0(t), F1(t),
-                                                            G0(t), G1(t),
-                                                            Σ(t), Tau(t),
+                    m, V, loglik_t = iterate_kalman_filter_mv(θ.F0(t), θ.F1(t),
+                                                            θ.G0(t), θ.G1(t),
+                                                            θ.Σ(t), θ.Tau(t),
                                                             m, V, @view(Y[t, :]))
                     loglik += loglik_t
                 else
-                    m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
+                    m, V = push_state_forward(θ.G0(t), θ.G1(t), θ.Tau(t), m, V)
                     loglik_t = zero(loglik)
                 end
-                ms[:, t] = m
-                Vs[:, :, t] = V
-                logliks[t] = loglik_t
+                state = update_kalman_state!(model, state, t, m, V, loglik_t)
             end
-            ms, Vs
-        end
     end
 
-    return loglik, ms, Vs, logliks
+    return loglik, state
 end
 
 # Zygote.@nograd kalman_filter_mv
@@ -98,8 +127,6 @@ function kalman_loglik(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
         e_t, Q_t, loglik_1 = calc_loglik_t(F0(1), F1(1), Σ(1), m, V, @view(Y[1, :]))
         loglik            += loglik_1
         m, V               = update_state(F1(1), m, V, e_t, Q_t)
-        # ms[:, 1]           = m
-        # Vs[:, :, 1]         = V
     else
         loglik += 0.0
     end
@@ -116,8 +143,7 @@ function kalman_loglik(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
             else
                 m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
             end
-            # ms[:, t] = m
-            # Vs[:, :, t] = V
+
         end
     end
 
