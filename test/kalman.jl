@@ -116,4 +116,4 @@ ll_pt4, ms, Vs  = SMC.kalman_filter_mv(F0, F, G0, G, Σ, Tau, m_next, V_next, Y[
 ms_smoothed, Vs_smoothed = SMC.kalman_smoother_mv(F0, F, G0, G, Σ, Tau, μ0, Tau0, Y_missing)
 @test size(ms_smoothed) == (3, 101)
 @test size(Vs_smoothed) == (3, 3, 101)
-
+@inferred SMC.kalman_smoother_mv(F0, F, G0, G, Σ, Tau, μ0, Tau0, Y_missing)
