@@ -37,39 +37,25 @@ function iterate_kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, m, V, y_t)
     return m_t, V_t, loglik
 end
 
-function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
+# function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
+function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
     T      = size(Y)[1]
-    m      = deepcopy(μ0)
-    ms     = repeat(m, outer=[1, T])
+    m      = deepcopy(reshape(μ0, :, 1))
     V      = deepcopy(Tau0)
-    Vs     = repeat(V, outer = [1, 1, T])
     P      = inv(V)
     loglik = zero(μ0[1])
 
-    if mutate
-        ms       = repeat(m, outer=[1, T])
-        Vs       = repeat(V, outer = [1, 1, T])
-        logliks  = fill(loglik, T)
-    else
-        ms       = m
-        Vs       = V
-        logliks  = missing
-    end
-
+    ms     = repeat(m, outer=(1, T))
+    Vs     = repeat(V, outer = (1, 1, T))
+    logliks  = fill(loglik, T)
 
     if !(any(ismissing.(Y[1, :])))
         e_t, Q_t, loglik_t = calc_loglik_t(F0(1), F1(1), Σ(1), m, V, @view(Y[1, :]))
         loglik            += loglik_t
         m, V               = update_state(F1(1), m, V, e_t, Q_t)
-        if mutate
-            ms[:, 1]           = m
-            Vs[:, :, 1]         = V
-            logliks[1]         = loglik_t
-        else
-            ms = m
-            Vs = V
-            logliks=missing
-        end
+        ms[:, 1]           = m
+        Vs[:, :, 1]         = V
+        logliks[1]         = loglik_t
     else
         loglik += 0.0
     end
@@ -88,14 +74,9 @@ function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
                     m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
                     loglik_t = 0
                 end
-                if mutate
-                    ms[:, t] = m
-                    Vs[:, :, t] = V
-                    logliks[t] = 0
-                else
-                    ms = hcat(ms, m)
-                    Vs = cat(Vs, V; dims=3)
-                end
+                ms[:, t] = m
+                Vs[:, :, t] = V
+                logliks[t] = 0
             end
             ms, Vs
         end

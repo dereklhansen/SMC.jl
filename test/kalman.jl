@@ -20,7 +20,10 @@ ll_tuple = SMC.calc_loglik_t(hcat(0.0), F(1), Σ(1), μ0, Tau0, Y[1, :])
 update_tuple = SMC.update_state(F(1), μ0, Tau0, ll_tuple[1], ll_tuple[2])
 @test size(update_tuple[1]) == (1,1)
 @test size(update_tuple[2]) == (1,1)
-
+m, V, loglik_t = SMC.iterate_kalman_filter_mv(vcat(0.0), F(1),
+                                          vcat(0.0), G(1),
+                                        Σ(1), Tau(1),
+                                        μ0, Tau0, @view(Y[1, :]))
 loglik, _, _ = SMC.kalman_filter_mv((t) -> hcat(0.0), F, (t) -> hcat(0.0), G, Σ,
                                        Tau, μ0, Tau0, Y)
 
