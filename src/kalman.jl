@@ -57,7 +57,7 @@ function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
         Vs[:, :, 1]         = V
         logliks[1]         = loglik_t
     else
-        loglik += 0.0
+        loglik += zero(loglik)
     end
 
     if (T > 1)
@@ -72,11 +72,11 @@ function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
                     loglik += loglik_t
                 else
                     m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
-                    loglik_t = 0
+                    loglik_t = zero(loglik)
                 end
                 ms[:, t] = m
                 Vs[:, :, t] = V
-                logliks[t] = 0
+                logliks[t] = loglik_t
             end
             ms, Vs
         end
