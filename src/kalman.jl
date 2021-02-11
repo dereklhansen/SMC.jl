@@ -64,7 +64,7 @@ function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
         if mutate
             ms[:, 1]           = m
             Vs[:, :, 1]         = V
-            logliks[t]         = loglik_t
+            logliks[1]         = loglik_t
         else
             ms = m
             Vs = V
