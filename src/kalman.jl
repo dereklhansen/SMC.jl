@@ -23,9 +23,6 @@ function update_state(F1, a_t, R_t, e_t, Q_t)
     return m_t, V_t
 end
 
-
-
-
 function iterate_kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, m, V, y_t)
     # Push the state forward
     a_t, R_t = push_state_forward(G0, G1, Tau, m, V)
@@ -63,7 +60,6 @@ end
 
 function kalman_filter_mv_nomutate(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
     m = KalmanModel(F0=F0, F1=F1, G0=G0, G1=G1, Σ=Σ, Tau=Tau, μ0=μ0, Tau0=Tau0, mutate=false)
-    @show m
     loglik, state = m(Y)
     return loglik, state.ms, state.Vs, state.logliks
 end
