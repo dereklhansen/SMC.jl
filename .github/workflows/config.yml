@@ -35,9 +35,7 @@ jobs:
           julia --project=. -e 'using Pkg; Pkg.build(verbose=true); Pkg.test(coverage=true)'
       - name: "Process code coverage:"
         run: |
-          cd ./code
           julia --project=. -e 'using Coverage; x=Codecov.process_folder();LCOV.writefile("lcov.info", x)'
-          cd ..
       - name: "Upload code coverage"
         uses: codecov/codecov-action@v1
         with:
