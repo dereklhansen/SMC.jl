@@ -116,41 +116,6 @@ end
 
 # Zygote.@nograd kalman_filter_mv
 
-function kalman_loglik(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
-    T      = size(Y)[1]
-    m      = deepcopy(μ0)
-    V      = deepcopy(Tau0)
-    P      = inv(V)
-    loglik = zero(μ0[1])
-
-    if !(any(ismissing.(Y[1, :])))
-        e_t, Q_t, loglik_1 = calc_loglik_t(F0(1), F1(1), Σ(1), m, V, @view(Y[1, :]))
-        loglik            += loglik_1
-        m, V               = update_state(F1(1), m, V, e_t, Q_t)
-    else
-        loglik += 0.0
-    end
-
-    if (T > 1)
-        for t in 2:T
-            # Push system forward
-            if !any(ismissing.(Y[t, :]))
-                m, V, loglik_t = iterate_kalman_filter_mv(F0(t), F1(t),
-                                                          G0(t), G1(t),
-                                                          Σ(t), Tau(t),
-                                                          m, V, @view(Y[t, :]))
-                loglik += loglik_t
-            else
-                m, V = push_state_forward(G0(t), G1(t), Tau(t), m, V)
-            end
-
-        end
-    end
-
-    return loglik
-end
-## Smoother
-
 function kalman_smoother_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y; mutate=true)
     T              = size(Y)[1]
 
