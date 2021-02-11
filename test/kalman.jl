@@ -27,7 +27,10 @@ m, V, loglik_t = SMC.iterate_kalman_filter_mv(vcat(0.0), F(1),
 loglik, _, _ = SMC.kalman_filter_mv((t) -> hcat(0.0), F, (t) -> hcat(0.0), G, Σ,
                                        Tau, μ0, Tau0, Y)
 
+
 @test loglik ≈ -275.019326809115
+
+@inferred SMC.kalman_filter_mv((t) -> hcat(0.0), F, (t) -> hcat(0.0), G, Σ, Tau, μ0, Tau0, Y)
 
 
 # Test is a 3-dimensional concatenation
