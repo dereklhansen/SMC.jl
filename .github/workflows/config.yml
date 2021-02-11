@@ -32,7 +32,7 @@ jobs:
       - run: julia --version
       - run: julia --compile=min -O0 -e 'import InteractiveUtils; InteractiveUtils.versioninfo()'
       - run: |
-          julia --project=. -e 'using Pkg; Pkg.build(verbose=True); Pkg.test(coverage=True)'
+          julia --project=. -e 'using Pkg; Pkg.build(verbose=true); Pkg.test(coverage=true)'
       - name: "Process code coverage:"
         run: |
           cd ./code
