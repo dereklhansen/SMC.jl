@@ -126,11 +126,11 @@ T = size(Y, 1)
 smc_fns = smc_model(LinearGaussian(), K, F0, F, G0, G, Tau, Σ, μ0, Tau0, Y)
 
 rng = MersenneTwister(34)
-Xs = smc_fns.rinit(rng)
-dprs = smc_fns.dpr(Xs)
-dm1 = smc_fns.dm(Xs, 1)
-dinits = smc_fns.dinit(Xs)
-dpres = smc_fns.dpre(Xs, 2)
+Xs = @inferred smc_fns.rinit(rng)
+dprs = @inferred smc_fns.dpr(Xs)
+dm1 = @inferred smc_fns.dm(Xs, 1)
+dinits = @inferred smc_fns.dinit(Xs)
+dpres = @inferred smc_fns.dpre(Xs, 2)
 
 @test size(Xs) == (3, K)
 
@@ -144,10 +144,10 @@ dm_actual = logpdf(MvNormal(Y[1, :], Σ(1)), Xs)
 logweights = dprs + dm1 - dinits + dpres
 @test all(logweights .≈ ll_true)
 
-Xs_new = smc_fns.rp(rng, Xs, 2)
-dts = smc_fns.dt(Xs, Xs_new, 2)
-dm2 = smc_fns.dm(Xs_new, 2)
-dps = smc_fns.dp(Xs, Xs_new, 2)
+Xs_new = @inferred smc_fns.rp(rng, Xs, 2)
+dts = @inferred smc_fns.dt(Xs, Xs_new, 2)
+dm2 = @inferred smc_fns.dm(Xs_new, 2)
+dps = @inferred smc_fns.dp(Xs, Xs_new, 2)
 
 #= using Debugger =#
 
