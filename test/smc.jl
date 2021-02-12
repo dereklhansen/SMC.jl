@@ -163,13 +163,25 @@ dt_actual = logpdf(MvNormal(Tau(2)), Xs_new - G(2) * Xs)
 dm_actual = logpdf(MvNormal(Y[2, :], Σ(2)), Xs_new)
 @test dm2 ≈ dm_actual
 
-@time smc_out = @inferred smc(rng, T, smc_fns...; threshold = 0.5, record_history = true);
+@time smc_out = @inferred smc(rng, T, smc_fns...; threshold = 0.5);
 
 ## There will still be some slight noise in the particle filter, so this approx may fail
 @test smc_out.loglik ≈ ll_true
 
-@time smc_out = smc(rng, T, smc_fns...; record_history = true, threshold = 1.0);
-
+# Test out new interface
+smc_filter = SMC.SMCModel(
+    record_history = true,
+    rinit = smc_fns.rinit,
+    rproposal = smc_fns.rp,
+    dinit = smc_fns.dinit,
+    dprior = smc_fns.dpr,
+    dproposal = smc_fns.dp,
+    dtransition = smc_fns.dt,
+    dmeasure = smc_fns.dm,
+    dpre = smc_fns.dpre,
+    threshold = 1.0,
+)
+smc_out = smc_filter(rng, T)
 ## There will still be some slight noise in the particle filter, so this approx may fail
 @test smc_out.loglik ≈ ll_true
 
