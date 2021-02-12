@@ -181,7 +181,8 @@ smc_filter = SMC.SMCModel(
     dpre = smc_fns.dpre,
     threshold = 1.0,
 )
-smc_out = smc_filter(rng, T)
+smc_out = @inferred smc_filter(rng, T)
+smc_out = @time smc_filter(rng, T);
 ## There will still be some slight noise in the particle filter, so this approx may fail
 @test smc_out.loglik ≈ ll_true
 

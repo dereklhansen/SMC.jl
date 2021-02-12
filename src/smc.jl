@@ -111,8 +111,8 @@ function (model::SMCModel)(rng, end_t)
     ancestors = zeros(Int, n_particles)
 
     if (record_history(model))
-        particle_history = repeat(particles, outer = [1, 1, end_t])
-        logweight_history = repeat(logweights, outer = [1, end_t])
+        particle_history = repeat(particles, outer = (1, 1, end_t))
+        logweight_history = repeat(logweights, outer = (1, end_t))
         ancestor_history = zeros(Int, n_particles, end_t)
     else
         particle_history = missing
