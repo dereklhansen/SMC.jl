@@ -13,6 +13,7 @@ using Crayons
 using Base.Iterators
 using Dates
 
+include("resampler.jl")
 include("smc.jl")
 include("kalman.jl")
 include("smc2_inference.jl")
