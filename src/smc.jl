@@ -7,26 +7,23 @@ end
 
 cpu = identity
 
-struct AliasTable{Q <: Real}
+struct AliasTable{Q<:Real}
     ap::Vector{Q}
     alias::Vector{Int}
     larges::Vector{Int}
     smalls::Vector{Int}
 end
 
-AliasTable(x, size) = AliasTable(fill(x, size),
-                                 fill(0, size),
-                                 fill(0, size),
-                                 fill(0, size))
+AliasTable(x, size) = AliasTable(fill(x, size), fill(0, size), fill(0, size), fill(0, size))
 
 function make_alias_table!(w, t::AliasTable)
-    n        = length(w)
-    probsum  = sum(w)
+    n = length(w)
+    probsum = sum(w)
     probmean = probsum / n
 
 
-    let n_small  = 0, n_large  = 0
-        for i in 1:n
+    let n_small = 0, n_large = 0
+        for i = 1:n
             if (w[i] < probmean)
                 t.smalls[n_small+1] = i
                 n_small += 1
@@ -43,7 +40,7 @@ function make_alias_table!(w, t::AliasTable)
             small_current = t.smalls[n_small+1]
             large_current = t.larges[n_large+1]
 
-            t.ap[small_current]    = w[small_current] / probmean
+            t.ap[small_current] = w[small_current] / probmean
             t.alias[small_current] = large_current
 
             w[large_current] = w[small_current] + w[large_current] - probmean
@@ -73,7 +70,7 @@ end
 
 function sample_alias_table!(rng, t::AliasTable, out)
     n = length(t.ap)
-    for i in 1:length(out)
+    for i = 1:length(out)
         N = sample(rng, 1:n)
         if (rand(rng) <= t.ap[N])
             out[i] = N
@@ -86,15 +83,15 @@ end
 
 function residual_resample!(rng, src, weights, dest, t::AliasTable)
     n_dest = length(dest)
-    n_src  = length(src)
+    n_src = length(src)
     mean_w = mean(weights) * (n_src) / (n_dest)
-    let m=1
-        for n in 1:n_src
-            n_fixed = floor(Int64, weights[n]/mean_w)
+    let m = 1
+        for n = 1:n_src
+            n_fixed = floor(Int64, weights[n] / mean_w)
             if n_fixed > 0
                 dest[m:(m+n_fixed-1)] .= n
-                m                      = m + n_fixed
-                weights[n]             = weights[n] - n_fixed * (mean_w)
+                m = m + n_fixed
+                weights[n] = weights[n] - n_fixed * (mean_w)
             end
         end
         # Resample the rest
@@ -105,15 +102,18 @@ function residual_resample!(rng, src, weights, dest, t::AliasTable)
     return dest
 end
 
-function residual_resample!(rng, src::AbstractArray{T},
-                            weights::AbstractArray{Q},
-                            dest::AbstractArray{T}) where {T <: Real, Q <: Real}
+function residual_resample!(
+    rng,
+    src::AbstractArray{T},
+    weights::AbstractArray{Q},
+    dest::AbstractArray{T},
+) where {T<:Real,Q<:Real}
     n = length(src)
     residual_resample!(rng, src, weights, dest, AliasTable(one(Q), n))
 end
 
-function residual_resample(rng, weights::AbstractArray{Q}, N) where {Q <: Real}
-    src  = 1:length(weights)
+function residual_resample(rng, weights::AbstractArray{Q}, N) where {Q<:Real}
+    src = 1:length(weights)
     dest = Vector{Int}(undef, N)
 
     residual_resample!(rng, src, weights, dest)
@@ -124,15 +124,24 @@ end
 Zygote.@nograd residual_resample, residual_resample!, make_alias_table!, sample_alias_table!
 
 exp_mean(xs) = logsumexp(xs) - log(length(xs))
-ess_exp(xs)  = exp(2*logsumexp(xs) - logsumexp(2*xs))
+ess_exp(xs) = exp(2 * logsumexp(xs) - logsumexp(2 * xs))
 
-pass_threshold(logweights, threshold) = ess_exp(logweights) >= threshold * length(logweights)
+pass_threshold(logweights, threshold) =
+    ess_exp(logweights) >= threshold * length(logweights)
 
-function adaptive_resample_particles(rng, logweights, ancestors, atable, old_particles, threshold = 1.0)
+function adaptive_resample_particles(
+    rng,
+    logweights,
+    ancestors,
+    atable,
+    old_particles,
+    threshold = 1.0,
+)
     if pass_threshold(logweights, threshold)
         return old_particles, logweights, false
     else
-        resampled_particles = resample_particles(rng, cpu(logweights), ancestors, atable, old_particles)
+        resampled_particles =
+            resample_particles(rng, cpu(logweights), ancestors, atable, old_particles)
         return resampled_particles, zero(logweights), true
     end
 end
@@ -155,31 +164,42 @@ end
 Zygote.@nograd getindex_ng
 
 
-function smc(rng, end_t, rinit, rproposal, dinit, dprior, dproposal, dtransition, dmeasure, dpre = dpre_default;
-             record_history = false,
-             threshold=1.0)
-    particles       = rinit(rng)
-    D, n_particles  = size(particles)
-    logK            = convert(typeof(particles[1]), log(n_particles))
+function smc(
+    rng,
+    end_t,
+    rinit,
+    rproposal,
+    dinit,
+    dprior,
+    dproposal,
+    dtransition,
+    dmeasure,
+    dpre = dpre_default;
+    record_history = false,
+    threshold = 1.0,
+)
+    particles = rinit(rng)
+    D, n_particles = size(particles)
+    logK = convert(typeof(particles[1]), log(n_particles))
     # Calculate log-likelihood of first particles
     logweights = dmeasure(particles, 1) + dprior(particles) - dinit(particles)
-    ancestors  = zeros(Int, n_particles)
+    ancestors = zeros(Int, n_particles)
 
     if (record_history)
-        particle_history  = repeat(particles, outer = [1, 1, end_t])
+        particle_history = repeat(particles, outer = [1, 1, end_t])
         logweight_history = repeat(logweights, outer = [1, end_t])
-        ancestor_history  = zeros(Int, n_particles, end_t)
+        ancestor_history = zeros(Int, n_particles, end_t)
     else
-        particle_history  = missing
+        particle_history = missing
         logweight_history = missing
-        ancestor_history  = missing
+        ancestor_history = missing
     end
 
-    atable   = AliasTable(logweights[1], n_particles)
+    atable = AliasTable(logweights[1], n_particles)
 
-    loglik   = exp_mean(logweights)
-    ess      = zeros(typeof(logweights[1]), end_t)
-    logliks   = zeros(typeof(logweights[1]), end_t)
+    loglik = exp_mean(logweights)
+    ess = zeros(typeof(logweights[1]), end_t)
+    logliks = zeros(typeof(logweights[1]), end_t)
     fq_ratio = zeros(typeof(logweights[1]), end_t)
     resampled = fill(false, end_t)
 
@@ -188,36 +208,40 @@ function smc(rng, end_t, rinit, rproposal, dinit, dprior, dproposal, dtransition
     setindex_ng!(ess, 1, ess_exp(logweights))
 
     particles, logweights = let old_particles = particles, logweights = logweights
-        for t in 2:end_t
+        for t = 2:end_t
             ## Resampling
-            logweights   = logweights .- logsumexp(logweights)
-            g_pre        = dpre(old_particles, t)
+            logweights = logweights .- logsumexp(logweights)
+            g_pre = dpre(old_particles, t)
             @assert !any(isnan.(g_pre))
-            logweights  += g_pre
-            ll_pre       = logsumexp(logweights)
+            logweights += g_pre
+            ll_pre = logsumexp(logweights)
 
 
-            resampled_particles, logweights_prev, resampled_t = adaptive_resample_particles(rng, logweights, ancestors, atable, old_particles, threshold)
+            resampled_particles, logweights_prev, resampled_t =
+                adaptive_resample_particles(
+                    rng,
+                    logweights,
+                    ancestors,
+                    atable,
+                    old_particles,
+                    threshold,
+                )
             setindex_ng!(resampled, t, resampled_t)
             if resampled_t
                 g_pre = getindex_ng(g_pre, ancestors)
-            end 
-            new_particles       = rproposal(rng, resampled_particles, t)
-            f_trans             = dtransition(resampled_particles,
-                                              new_particles,
-                                              t)
+            end
+            new_particles = rproposal(rng, resampled_particles, t)
+            f_trans = dtransition(resampled_particles, new_particles, t)
             @assert !any(isnan.(f_trans))
-            g_measure           = dmeasure(new_particles, t)
+            g_measure = dmeasure(new_particles, t)
             @assert !any(isnan.(g_measure))
-            q_prop              = dproposal(resampled_particles,
-                                            new_particles,
-                                            t)
+            q_prop = dproposal(resampled_particles, new_particles, t)
             @assert !any(isnan.(q_prop))
-            f_over_q      = f_trans - q_prop
-            logweights    = f_trans + g_measure - q_prop - g_pre + logweights_prev
+            f_over_q = f_trans - q_prop
+            logweights = f_trans + g_measure - q_prop - g_pre + logweights_prev
 
-            logliks_t    = logsumexp(logweights) - logsumexp(logweights_prev) + ll_pre
-            loglik       += logliks_t
+            logliks_t = logsumexp(logweights) - logsumexp(logweights_prev) + ll_pre
+            loglik += logliks_t
 
             if loglik == -Inf
                 break
@@ -228,17 +252,27 @@ function smc(rng, end_t, rinit, rproposal, dinit, dprior, dproposal, dtransition
             setindex_ng!(ess, t, ess_exp(logweights))
 
             if record_history
-                particle_history[:, :, t]  .= new_particles
+                particle_history[:, :, t] .= new_particles
                 logweight_history[:, t] .= logweights
-                ancestor_history[:, t]      = ancestors
+                ancestor_history[:, t] = ancestors
             end
 
             old_particles = new_particles
         end
         particles, logweights
     end
-    return @NT(loglik, logliks, particles, logweights, ess, fq_ratio, resampled,
-               particle_history, logweight_history, ancestor_history)
+    return @NT(
+        loglik,
+        logliks,
+        particles,
+        logweights,
+        ess,
+        fq_ratio,
+        resampled,
+        particle_history,
+        logweight_history,
+        ancestor_history
+    )
 end
 
 ## Stripped down version which only returns the log-likelihood and more
@@ -246,8 +280,8 @@ end
 
 function resample_particles(rng, logweights, ancestors, atable, old_particles)
     n_particles = length(logweights)
-    lw_max     = maximum(logweights)
-    W          = exp.(logweights .- lw_max)
+    lw_max = maximum(logweights)
+    W = exp.(logweights .- lw_max)
     residual_resample!(rng, 1:n_particles, W, ancestors, atable)
 
     resampled_particles = (old_particles[:, ancestors])
@@ -259,33 +293,32 @@ Zygote.@nograd resample_particles
 function calc_filtered_mean(particle_history, logweight_history)
     D, K, T = size(particle_history)
     mu = fill(particle_history[1], D, T)
-    for t in 1:T
-        w     = exp.(@view(logweight_history[:, t]) .- maximum(@view(logweight_history[:, t])))
-        mu[:, t] = sum(particle_history[:, i, t] * w[i] for i in 1:K) / sum(w)
+    for t = 1:T
+        w = exp.(@view(logweight_history[:, t]) .- maximum(@view(logweight_history[:, t])))
+        mu[:, t] = sum(particle_history[:, i, t] * w[i] for i = 1:K) / sum(w)
     end
     return mu
 end
 
-function simulate_backward(rng, particle_history,
-                           logweight_history, dtransition, n_draws)
+function simulate_backward(rng, particle_history, logweight_history, dtransition, n_draws)
     D, n_particles, T = size(particle_history)
-    X  = particle_history
+    X = particle_history
     LW = logweight_history
 
-    w  = exp.(view(LW, :, T) .- maximum(view(LW, :, T)))
-    a  = residual_resample!(rng, 1:n_particles, w, Vector{Int}(undef, n_draws))
+    w = exp.(view(LW, :, T) .- maximum(view(LW, :, T)))
+    a = residual_resample!(rng, 1:n_particles, w, Vector{Int}(undef, n_draws))
 
     X_sm = X[:, a, :]
 
     F = fill(zero(X[1]), n_draws, n_particles)
 
-    for t in (T-1):-1:1
-        F     = dtransition_outer(view(X, :, :, t), view(X_sm, :, :, t+1), dtransition, t+1)
+    for t = (T-1):-1:1
+        F = dtransition_outer(view(X, :, :, t), view(X_sm, :, :, t + 1), dtransition, t + 1)
         LW_sm = calculate_ffbs_weights(view(LW, :, t), F)
-        for j in 1:n_draws
+        for j = 1:n_draws
             lw = view(LW_sm, :, j)
-            w  = exp.(lw .- maximum(lw))
-            a  = wsample(rng, 1:n_particles, w)
+            w = exp.(lw .- maximum(lw))
+            a = wsample(rng, 1:n_particles, w)
             X_sm[:, j, t] = X[:, a, t]
         end
     end
@@ -294,15 +327,19 @@ function simulate_backward(rng, particle_history,
 end
 
 function dtransition_outer(Xprev, X, dtransition, t)
-    n_particles  = size(Xprev)[2]
-    n_draws      = size(X)[2]
-    X1           = view(Xprev, :, repeat(1:n_particles, outer = n_draws))
-    X2           = view(X, :, repeat(1:n_draws, inner = n_particles))
-    F            = dtransition(X1, X2, t)
+    n_particles = size(Xprev)[2]
+    n_draws = size(X)[2]
+    X1 = view(Xprev, :, repeat(1:n_particles, outer = n_draws))
+    X2 = view(X, :, repeat(1:n_draws, inner = n_particles))
+    F = dtransition(X1, X2, t)
     return reshape(F, n_particles, n_draws)
 end
 
-function calculate_ffbs_weights(ws_x::AbstractVector, ws_y::AbstractVector, F::AbstractMatrix)
+function calculate_ffbs_weights(
+    ws_x::AbstractVector,
+    ws_y::AbstractVector,
+    F::AbstractMatrix,
+)
     ws_x .+ F .+ ws_y'
 end
 
@@ -311,11 +348,17 @@ function calculate_ffbs_weights(ws_x::AbstractVector, F::AbstractMatrix)
 end
 
 function simulate_threaded(particle_history, logweight_history, dt, K)
-    N     = Base.Threads.nthreads()
-    ffbs_out = zeros(eltype(particle_history), size(particle_history, 1), K*N, size(particle_history, 3))
-    Base.Threads.@threads for n in 1:N
+    N = Base.Threads.nthreads()
+    ffbs_out = zeros(
+        eltype(particle_history),
+        size(particle_history, 1),
+        K * N,
+        size(particle_history, 3),
+    )
+    Base.Threads.@threads for n = 1:N
         rng = Random.MersenneTwister()
-        ffbs_out[:, (1+(n-1)*K):(n*K), :] = simulate_backward(rng, particle_history, logweight_history, dt, K)
+        ffbs_out[:, (1+(n-1)*K):(n*K), :] =
+            simulate_backward(rng, particle_history, logweight_history, dt, K)
     end
     return ffbs_out
 end
