@@ -133,10 +133,11 @@ m, V, loglik_t = SMC.iterate_kalman_filter_mv(
     Tau0,
     @view(Y[1, :])
 )
-loglik, _, _ =
+loglik, ms, vs =
     SMC.kalman_filter_mv((t) -> hcat(0.0), F, (t) -> hcat(0.0), G, Σ, Tau, μ0, Tau0, Y)
 
-
+@assert size(ms) == (1, 101)
+@assert size(vs) == (1, 1, 101)
 @test loglik ≈ -275.019326809115
 
 @inferred SMC.kalman_filter_mv(
@@ -164,6 +165,12 @@ model_nomutate = SMC.KalmanModel(
 )
 
 @inferred model_nomutate(Y)
+ll_nomutate, state_nomutate = model_nomutate(Y)
+@test ll_nomutate ≈ -275.019326809115
+@test size(state_nomutate.ms) == (1, 101)
+@test size(state_nomutate.Vs) == (1, 1, 101)
+@test all(state_nomutate.ms ≈ ms)
+@test all(state_nomutate.Vs ≈ vs)
 
 # Test is a 3-dimensional concatenation
 # Should be 3x the log-likelihood above
@@ -339,3 +346,20 @@ ms_smoothed, Vs_smoothed = SMC.kalman_smoother_mv(F0, F, G0, G, Σ, Tau, μ0, Ta
 @test size(ms_smoothed) == (3, 101)
 @test size(Vs_smoothed) == (3, 3, 101)
 @inferred SMC.kalman_smoother_mv(F0, F, G0, G, Σ, Tau, μ0, Tau0, Y_missing)
+
+model_nomutate = SMC.KalmanModel(
+    mutate = false,
+    F0 = F0,
+    G0 = G0,
+    F1 = F,
+    G1 = G,
+    Σ = Σ,
+    Tau = Tau,
+    μ0 = μ0,
+    Tau0 = Tau0,
+)
+
+state_nomutate = SMC.smooth(model_nomutate, Y_missing);
+@test all(ms_smoothed ≈ state_nomutate.ms_smoothed)
+@test all(Vs_smoothed ≈ state_nomutate.Vs_smoothed)
+@inferred SMC.smooth(model_nomutate, Y_missing);

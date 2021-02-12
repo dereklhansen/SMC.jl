@@ -63,23 +63,6 @@ function kalman_filter_mv(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
         Tau0 = Tau0,
         mutate = true,
     )
-    @show m
-    loglik, state = m(Y)
-    return loglik, state.ms, state.Vs, state.logliks
-end
-
-function kalman_filter_mv_nomutate(F0, F1, G0, G1, Σ, Tau, μ0, Tau0, Y)
-    m = KalmanModel(
-        F0 = F0,
-        F1 = F1,
-        G0 = G0,
-        G1 = G1,
-        Σ = Σ,
-        Tau = Tau,
-        μ0 = μ0,
-        Tau0 = Tau0,
-        mutate = false,
-    )
     loglik, state = m(Y)
     return loglik, state.ms, state.Vs, state.logliks
 end
@@ -110,8 +93,13 @@ function update_kalman_state!(
     V::Array{Float64,2},
     loglik_t::Float64,
 )
-    ms = hcat(state.ms, m)
-    Vs = cat3(state.Vs, reshape(V, size(V, 1), size(V, 2), 1))
+    if t > 1
+        ms = hcat(state.ms, m)
+        Vs = cat3(state.Vs, reshape(V, size(V, 1), size(V, 2), 1))
+    else
+        ms = m
+        Vs = reshape(V, size(V, 1), size(V, 2), 1)
+    end
     return (ms = ms, Vs = Vs)
 end
 
