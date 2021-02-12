@@ -163,7 +163,7 @@ dt_actual = logpdf(MvNormal(Tau(2)), Xs_new - G(2) * Xs)
 dm_actual = logpdf(MvNormal(Y[2, :], Σ(2)), Xs_new)
 @test dm2 ≈ dm_actual
 
-@time smc_out = smc(rng, T, smc_fns...; threshold = 0.5, record_history = true);
+@time smc_out = @inferred smc(rng, T, smc_fns...; threshold = 0.5, record_history = true);
 
 ## There will still be some slight noise in the particle filter, so this approx may fail
 @test smc_out.loglik ≈ ll_true
