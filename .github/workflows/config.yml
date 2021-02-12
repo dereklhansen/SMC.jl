@@ -33,7 +33,7 @@ jobs:
       - run: julia --compile=min -O0 -e 'import InteractiveUtils; InteractiveUtils.versioninfo()'
       - name: "Test Julia code format"
         run: |
-          julia --project=. -e 'using Pkg; Pkg.add(name="JuliaFormatter", version="0.13"); using JuliaFormatter; using Test; @test format(".")'
+          julia 'using Pkg; Pkg.add(name="JuliaFormatter", version="0.13"); using JuliaFormatter; using Test; @test format(".")'
       - name: "Test Julia Package"
         run: |
           julia --project=. -e 'using Pkg; Pkg.build(verbose=true); Pkg.test(coverage=true)'
