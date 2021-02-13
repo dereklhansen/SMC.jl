@@ -121,7 +121,7 @@ y = [
 
 Y = hcat(y, y, y)
 ll_true = -275.019326809115 * 3
-K = 2000
+K = 20
 T = size(Y, 1)
 rng = MersenneTwister(34)
 for md in [lg_smc_model, lgc_smc_model]
