@@ -48,6 +48,23 @@ function getindex_ng(xs, is)
 end
 
 Zygote.@nograd getindex_ng
+struct SMCModel{record_history,T<:Any}
+    θ::T
+end
+
+function SMCModel(; kwargs...)
+    if haskey(kwargs, :record_history)
+        record_history = kwargs[:record_history]
+    else
+        record_history = false
+    end
+    SMCModel{record_history,typeof(kwargs.data)}(kwargs.data)
+end
+
+function Base.show(io::IO, x::SMCModel{record_history}) where {record_history}
+    print(io, "SMCModel(θ=", x.θ, ")\n")
+    print(io, "record_history=", record_history)
+end
 
 
 function smc(
@@ -61,19 +78,41 @@ function smc(
     dtransition,
     dmeasure,
     dpre = dpre_default;
-    record_history = false,
+    # record_history = false,
     threshold = 1.0,
 )
-    particles = rinit(rng)
+    m = SMCModel(
+        record_history = false,
+        rinit = rinit,
+        rproposal = rproposal,
+        dinit = dinit,
+        dprior = dprior,
+        dproposal = dproposal,
+        dtransition = dtransition,
+        dmeasure = dmeasure,
+        dpre = dpre,
+        threshold = threshold,
+    )
+
+    m(rng, end_t)
+end
+
+function record_history(::SMCModel{rh,T}) where {rh,T}
+    return rh
+end
+
+function (model::SMCModel)(rng, end_t)
+    θ = model.θ
+    particles = θ.rinit(rng)
     D, n_particles = size(particles)
     logK = convert(typeof(particles[1]), log(n_particles))
     # Calculate log-likelihood of first particles
-    logweights = dmeasure(particles, 1) + dprior(particles) - dinit(particles)
+    logweights = θ.dmeasure(particles, 1) + θ.dprior(particles) - θ.dinit(particles)
     ancestors = zeros(Int, n_particles)
 
-    if (record_history)
-        particle_history = repeat(particles, outer = [1, 1, end_t])
-        logweight_history = repeat(logweights, outer = [1, end_t])
+    if (record_history(model))
+        particle_history = repeat(particles, outer = (1, 1, end_t))
+        logweight_history = repeat(logweights, outer = (1, end_t))
         ancestor_history = zeros(Int, n_particles, end_t)
     else
         particle_history = missing
@@ -97,7 +136,7 @@ function smc(
         for t = 2:end_t
             ## Resampling
             logweights = logweights .- logsumexp(logweights)
-            g_pre = dpre(old_particles, t)
+            g_pre = θ.dpre(old_particles, t)
             @assert !any(isnan.(g_pre))
             logweights += g_pre
             ll_pre = logsumexp(logweights)
@@ -110,18 +149,18 @@ function smc(
                     ancestors,
                     atable,
                     old_particles,
-                    threshold,
+                    θ.threshold,
                 )
             setindex_ng!(resampled, t, resampled_t)
             if resampled_t
                 g_pre = getindex_ng(g_pre, ancestors)
             end
-            new_particles = rproposal(rng, resampled_particles, t)
-            f_trans = dtransition(resampled_particles, new_particles, t)
+            new_particles = θ.rproposal(rng, resampled_particles, t)
+            f_trans = θ.dtransition(resampled_particles, new_particles, t)
             @assert !any(isnan.(f_trans))
-            g_measure = dmeasure(new_particles, t)
+            g_measure = θ.dmeasure(new_particles, t)
             @assert !any(isnan.(g_measure))
-            q_prop = dproposal(resampled_particles, new_particles, t)
+            q_prop = θ.dproposal(resampled_particles, new_particles, t)
             @assert !any(isnan.(q_prop))
             f_over_q = f_trans - q_prop
             logweights = f_trans + g_measure - q_prop - g_pre + logweights_prev
@@ -137,7 +176,7 @@ function smc(
             setindex_ng!(fq_ratio, t, exp_mean(f_over_q))
             setindex_ng!(ess, t, ess_exp(logweights))
 
-            if record_history
+            if record_history(model)
                 particle_history[:, :, t] .= new_particles
                 logweight_history[:, t] .= logweights
                 ancestor_history[:, t] = ancestors
