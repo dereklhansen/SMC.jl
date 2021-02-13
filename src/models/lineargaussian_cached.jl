@@ -59,10 +59,10 @@ function dinit_base(m::LinearGaussianCached, Zs)
 end
 
 function calc_prop(m::LinearGaussianCached, Zs, t)
-    μ =
-        m.θ.states_sm[:, t] .+
-        (m.θ.Covs_sm[:, :, t-1] / m.θ.variances_sm[:, :, t-1]) *
-        (Zs .- m.θ.states_sm[:, t-1])
+    A = @view(m.θ.Covs_sm[:, :, t-1]) / @view(m.θ.variances_sm[:, :, t-1])
+    eps = m.θ._eps_prop .= (Zs .- @view(m.θ.states_sm[:, t-1]))
+    μ = (A * eps) .+= @view(m.θ.states_sm[:, t])
+
     Σ = Symmetric(
         m.θ.variances_sm[:, :, t] -
         (m.θ.Covs_sm[:, :, t-1] / m.θ.variances_sm[:, :, t-1]) * m.θ.Covs_sm[:, :, t-1]',
@@ -129,6 +129,7 @@ function lgc_smc_model(K, F0, F, G0, G, Tau, Σ, μ0, Tau0, Y)
             Matrix{Float64}(undef, size(μ0, 1), K),
             Matrix{Float64}(undef, size(μ0, 1), K),
         ],
+        _eps_prop = Matrix{Float64}(undef, size(μ0, 1), K),
     )
 
     dpr(Zs) = dpr_base(m, Zs)
