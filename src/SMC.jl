@@ -23,6 +23,7 @@ export @NT
 module Models
 import ..@NT
 include("models/lineargaussian.jl")
+include("models/lineargaussian_cached.jl")
 end
 
 end

@@ -3,7 +3,7 @@ using Random: MersenneTwister
 using Distributions: MvNormal, logpdf
 using StatsFuns: logsumexp
 
-using SMC.Models: lg_smc_model, LinearGaussian
+using SMC.Models: lg_smc_model, lgc_smc_model, LinearGaussian
 using SMC: smc
 
 F0(t) = [0.0, 0.0, 0.0]
@@ -121,72 +121,75 @@ y = [
 
 Y = hcat(y, y, y)
 ll_true = -275.019326809115 * 3
-K = 20
+K = 2000
 T = size(Y, 1)
-smc_fns = lg_smc_model(K, F0, F, G0, G, Tau, Σ, μ0, Tau0, Y)
-
 rng = MersenneTwister(34)
-Xs = @inferred smc_fns.rinit(rng)
-dprs = @inferred smc_fns.dpr(Xs)
-dm1 = @inferred smc_fns.dm(Xs, 1)
-dinits = @inferred smc_fns.dinit(Xs)
-dpres = @inferred smc_fns.dpre(Xs, 2)
+for md in [lg_smc_model, lgc_smc_model]
+    smc_fns = md(K, F0, F, G0, G, Tau, Σ, μ0, Tau0, Y)
 
-@test size(Xs) == (3, K)
+    Xs = @inferred smc_fns.rinit(rng)
+    dprs = @inferred smc_fns.dpr(Xs)
+    dm1 = @inferred smc_fns.dm(Xs, 1)
+    dinits = @inferred smc_fns.dinit(Xs)
+    dpres = @inferred smc_fns.dpre(Xs, 2)
 
-dpr_actual = logpdf(MvNormal(μ0, Tau0), Xs)
-@test dprs ≈ dpr_actual
+    @test size(Xs) == (3, K)
 
-dm_actual = logpdf(MvNormal(Y[1, :], Σ(1)), Xs)
-@test dm1 ≈ dm_actual
+    dpr_actual = logpdf(MvNormal(μ0, Tau0), Xs)
+    @test dprs ≈ dpr_actual
 
-## The adapted filter should have all weights equal to the total-data likelihood
-logweights = dprs + dm1 - dinits + dpres
-@test all(logweights .≈ ll_true)
+    dm_actual = logpdf(MvNormal(Y[1, :], Σ(1)), Xs)
+    @test dm1 ≈ dm_actual
 
-Xs_new = @inferred smc_fns.rp(rng, Xs, 2)
-dts = @inferred smc_fns.dt(Xs, Xs_new, 2)
-dm2 = @inferred smc_fns.dm(Xs_new, 2)
-dps = @inferred smc_fns.dp(Xs, Xs_new, 2)
+    ## The adapted filter should have all weights equal to the total-data likelihood
+    logweights = dprs + dm1 - dinits + dpres
+    @test all(logweights .≈ ll_true)
 
-#= using Debugger =#
+    Xs_new = @inferred smc_fns.rp(rng, Xs, 2)
+    dts = @inferred smc_fns.dt(Xs, Xs_new, 2)
+    dm2 = @inferred smc_fns.dm(Xs_new, 2)
+    dps = @inferred smc_fns.dp(Xs, Xs_new, 2)
 
-#= @enter smc_fns.rp(rng, Xs, 2) =#
+    #= using Debugger =#
 
-#= @enter smc_fns.dt(Xs, Xs_new, 2) =#
+    #= @enter smc_fns.rp(rng, Xs, 2) =#
 
-@test size(Xs_new) == (3, K)
+    #= @enter smc_fns.dt(Xs, Xs_new, 2) =#
 
-dt_actual = logpdf(MvNormal(Tau(2)), Xs_new - G(2) * Xs)
-@test dts ≈ dt_actual
+    @test size(Xs_new) == (3, K)
 
-dm_actual = logpdf(MvNormal(Y[2, :], Σ(2)), Xs_new)
-@test dm2 ≈ dm_actual
+    dt_actual = logpdf(MvNormal(Tau(2)), Xs_new - G(2) * Xs)
+    @test dts ≈ dt_actual
 
-@time smc_out = @inferred smc(rng, T, smc_fns...; threshold = 0.5);
+    dm_actual = logpdf(MvNormal(Y[2, :], Σ(2)), Xs_new)
+    @test dm2 ≈ dm_actual
 
-## There will still be some slight noise in the particle filter, so this approx may fail
-@test smc_out.loglik ≈ ll_true
+    @time smc_out = @inferred smc(rng, T, smc_fns...; threshold = 0.5)
 
-# Test out new interface
-smc_filter = SMC.SMCModel(
-    record_history = true,
-    rinit = smc_fns.rinit,
-    rproposal = smc_fns.rp,
-    dinit = smc_fns.dinit,
-    dprior = smc_fns.dpr,
-    dproposal = smc_fns.dp,
-    dtransition = smc_fns.dt,
-    dmeasure = smc_fns.dm,
-    dpre = smc_fns.dpre,
-    threshold = 1.0,
-)
-smc_out = @inferred smc_filter(rng, T)
-smc_out = @time smc_filter(rng, T);
-## There will still be some slight noise in the particle filter, so this approx may fail
-@test smc_out.loglik ≈ ll_true
+    ## There will still be some slight noise in the particle filter, so this approx may fail
+    @test smc_out.loglik ≈ ll_true
 
-fwd_weights =
-    smc_out.logweight_history[:, 27] + smc_fns.dpre(smc_out.particle_history[:, :, 27], 28)
-fwd_w = fwd_weights .- logsumexp(fwd_weights)
-@test all(isapprox.(fwd_w, -log(K)))
+    # Test out new interface
+    smc_filter = SMC.SMCModel(
+        record_history = true,
+        rinit = smc_fns.rinit,
+        rproposal = smc_fns.rp,
+        dinit = smc_fns.dinit,
+        dprior = smc_fns.dpr,
+        dproposal = smc_fns.dp,
+        dtransition = smc_fns.dt,
+        dmeasure = smc_fns.dm,
+        dpre = smc_fns.dpre,
+        threshold = 1.0,
+    )
+    smc_out = @inferred smc_filter(rng, T)
+    smc_out = @time smc_filter(rng, T)
+    ## There will still be some slight noise in the particle filter, so this approx may fail
+    @test smc_out.loglik ≈ ll_true
+
+    fwd_weights =
+        smc_out.logweight_history[:, 27] +
+        smc_fns.dpre(smc_out.particle_history[:, :, 27], 28)
+    fwd_w = fwd_weights .- logsumexp(fwd_weights)
+    @test all(isapprox.(fwd_w, -log(K)))
+end
