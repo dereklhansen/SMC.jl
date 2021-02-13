@@ -3,7 +3,7 @@ using Random: MersenneTwister
 using Distributions: MvNormal, logpdf
 using StatsFuns: logsumexp
 
-using SMC.Models: smc_model, LinearGaussian
+using SMC.Models: lg_smc_model, LinearGaussian
 using SMC: smc
 
 F0(t) = [0.0, 0.0, 0.0]
@@ -123,7 +123,7 @@ Y = hcat(y, y, y)
 ll_true = -275.019326809115 * 3
 K = 20
 T = size(Y, 1)
-smc_fns = smc_model(LinearGaussian(), K, F0, F, G0, G, Tau, Σ, μ0, Tau0, Y)
+smc_fns = lg_smc_model(K, F0, F, G0, G, Tau, Σ, μ0, Tau0, Y)
 
 rng = MersenneTwister(34)
 Xs = @inferred smc_fns.rinit(rng)
