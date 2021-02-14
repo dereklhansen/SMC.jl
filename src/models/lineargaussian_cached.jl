@@ -18,8 +18,8 @@ function Base.show(io::IO, ::LinearGaussianCached)
 end
 
 # Generative Model
-function dpr_base(model::LinearGaussianCached, Zs)
-    logpdf(MvNormal(model.θ.μ0, model.θ.Tau0), Zs)
+function dpr_base(m::LinearGaussianCached, Zs)
+    logpdf!(m.θ._dpr, MvNormal(m.θ.μ0, m.θ.Tau0), Zs)
 end
 
 function rpr_base(model::LinearGaussianCached, rng)
@@ -33,7 +33,7 @@ end
 function dt_base(m::LinearGaussianCached, Zs, Zs_new, t)
     μ = m.θ.G(t) * Zs
     Σ = m.θ.Tau(t)
-    d = logpdf(MvNormal(Σ), Zs_new - μ)
+    d = logpdf!(m.θ._dt, MvNormal(Σ), Zs_new - μ)
     @assert !any(isnan.(d))
     return d
 end
@@ -43,7 +43,7 @@ function dm_base(m::LinearGaussianCached, Zs, t)
     if any(ismissing.(yt))
         return zeros(eltype(Zs), size(Zs, 2))
     else
-        d = logpdf(MvNormal(m.θ.Σ(t)), m.θ.F(t) * Zs .- yt)
+        d = logpdf!(m.θ._dm, MvNormal(m.θ.Σ(t)), m.θ.F(t) * Zs .- yt)
         @assert !any(isnan.(d))
         return d
     end
@@ -55,7 +55,11 @@ function rinit_base(m::LinearGaussianCached, rng)
 end
 
 function dinit_base(m::LinearGaussianCached, Zs)
-    logpdf(MvNormal(m.θ.states_sm[:, 1], Symmetric(m.θ.variances_sm[:, :, 1])), Zs)
+    logpdf!(
+        m.θ._dinit,
+        MvNormal(m.θ.states_sm[:, 1], Symmetric(m.θ.variances_sm[:, :, 1])),
+        Zs,
+    )
 end
 
 function calc_prop(m::LinearGaussianCached, Zs, t)
@@ -86,16 +90,24 @@ end
 function dp_base(m::LinearGaussianCached, Zs, Zs_new, t)
     μ, Σ = calc_prop(m, Zs, t)
     @assert isposdef(Σ)
-    d = logpdf(MvNormal(Σ), Zs_new - μ)
+    d = logpdf!(m.θ._dp, MvNormal(Σ), Zs_new - μ)
     return d
 end
 
 function dpre_base(m::LinearGaussianCached, Zs, t)
-    d_smooth =
-        logpdf(MvNormal(m.θ.states_sm[:, t-1], Symmetric(m.θ.variances_sm[:, :, t-1])), Zs)
-    d_filt = logpdf(MvNormal(m.θ.states[:, t-1], Symmetric(m.θ.variances[:, :, t-1])), Zs)
+    d_smooth = logpdf!(
+        m.θ._dsmooth,
+        MvNormal(m.θ.states_sm[:, t-1], Symmetric(m.θ.variances_sm[:, :, t-1])),
+        Zs,
+    )
+    d_filt = logpdf!(
+        m.θ._dfilt,
+        MvNormal(m.θ.states[:, t-1], Symmetric(m.θ.variances[:, :, t-1])),
+        Zs,
+    )
 
-    d = (d_smooth - d_filt) .+ sum(@view(m.θ.lls[t:end]))
+    d = (d_smooth .-= d_filt)
+    d .+= sum(@view(m.θ.lls[t:end]))
     @assert !any(isnan.(d))
     return d
 end
@@ -130,6 +142,13 @@ function lgc_smc_model(K, F0, F, G0, G, Tau, Σ, μ0, Tau0, Y)
             Matrix{Float64}(undef, size(μ0, 1), K),
         ],
         _eps_prop = Matrix{Float64}(undef, size(μ0, 1), K),
+        _dpr = Vector{Float64}(undef, K),
+        _dt = Vector{Float64}(undef, K),
+        _dm = Vector{Float64}(undef, K),
+        _dinit = Vector{Float64}(undef, K),
+        _dp = Vector{Float64}(undef, K),
+        _dsmooth = Vector{Float64}(undef, K),
+        _dfilt = Vector{Float64}(undef, K),
     )
 
     dpr(Zs) = dpr_base(m, Zs)
