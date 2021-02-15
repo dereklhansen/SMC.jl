@@ -200,9 +200,6 @@ function (model::SMCModel)(rng, end_t)
     )
 end
 
-## Stripped down version which only returns the log-likelihood and more
-## amenable to autodiff
-
 function resample_particles(rng, logweights, ancestors, atable, old_particles)
     n_particles = length(logweights)
     lw_max = maximum(logweights)
@@ -270,30 +267,6 @@ function dtransition_outer(Xprev, X, dtransition, t)
     return reshape(F, n_particles, n_draws)
 end
 
-function calculate_ffbs_weights(
-    ws_x::AbstractVector,
-    ws_y::AbstractVector,
-    F::AbstractMatrix,
-)
-    ws_x .+ F .+ ws_y'
-end
-
 function calculate_ffbs_weights(ws_x::AbstractVector, F::AbstractMatrix)
     ws_x .+ F
-end
-
-function simulate_threaded(particle_history, logweight_history, dt, K)
-    N = Base.Threads.nthreads()
-    ffbs_out = zeros(
-        eltype(particle_history),
-        size(particle_history, 1),
-        K * N,
-        size(particle_history, 3),
-    )
-    Base.Threads.@threads for n = 1:N
-        rng = Random.MersenneTwister()
-        ffbs_out[:, (1+(n-1)*K):(n*K), :] =
-            simulate_backward(rng, particle_history, logweight_history, dt, K)
-    end
-    return ffbs_out
 end
