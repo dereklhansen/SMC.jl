@@ -193,5 +193,20 @@ for md in [lg_smc_model, lgc_smc_model]
     fwd_w = fwd_weights .- logsumexp(fwd_weights)
     @test all(isapprox.(fwd_w, -log(K)))
 
-    @inferred calc_filtered_mean(smc_out)
+    @inferred SMC.calc_filtered_mean(smc_out)
+
+    @inferred SMC.simulate_backward(
+        rng,
+        smc_out.particle_history,
+        smc_out.logweight_history,
+        smc_fns.dt,
+        5,
+    )
+    @time SMC.simulate_backward(
+        rng,
+        smc_out.particle_history,
+        smc_out.logweight_history,
+        smc_fns.dt,
+        5,
+    )
 end

@@ -253,8 +253,8 @@ function simulate_backward(rng, particle_history, logweight_history, dtransition
         for j = 1:n_draws
             lw = view(LW_sm, :, j)
             w = exp.(lw .- maximum(lw))
-            a = wsample(rng, 1:n_particles, w)
-            X_sm[:, j, t] = X[:, a, t]
+            aj = wsample(rng, 1:n_particles, w)
+            X_sm[:, j, t] = X[:, aj, t]
         end
     end
 
