@@ -33,6 +33,9 @@ end
 function dt_base(m::LinearGaussianCached, Zs, Zs_new, t)
     μ = m.θ.G(t) * Zs
     Σ = m.θ.Tau(t)
+    if size(m.θ._dt, 1) != size(μ, 2)
+        resize!(m.θ._dt, size(μ, 2))
+    end
     d = logpdf!(m.θ._dt, MvNormal(Σ), Zs_new - μ)
     @assert !any(isnan.(d))
     return d

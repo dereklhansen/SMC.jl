@@ -200,9 +200,6 @@ function (model::SMCModel)(rng, end_t)
     )
 end
 
-## Stripped down version which only returns the log-likelihood and more
-## amenable to autodiff
-
 function resample_particles(rng, logweights, ancestors, atable, old_particles)
     n_particles = length(logweights)
     lw_max = maximum(logweights)
@@ -215,12 +212,22 @@ end
 
 Zygote.@nograd resample_particles
 
-function calc_filtered_mean(particle_history, logweight_history)
-    D, K, T = size(particle_history)
-    mu = fill(particle_history[1], D, T)
+function calc_filtered_mean(smc_out)
+    D, K, T = size(smc_out.particle_history)
+    mu = fill(zero(eltype(smc_out.particle_history)), D, T)
+    w = Vector{eltype(smc_out.particle_history)}(undef, K)
+    xw = Vector{eltype(smc_out.particle_history)}(undef, D)
     for t = 1:T
-        w = exp.(@view(logweight_history[:, t]) .- maximum(@view(logweight_history[:, t])))
-        mu[:, t] = sum(particle_history[:, i, t] * w[i] for i = 1:K) / sum(w)
+        w .=
+            exp.(
+                @view(smc_out.logweight_history[:, t]) .-
+                maximum(@view(smc_out.logweight_history[:, t])),
+            )
+        W = sum(w)
+        for i = 1:K
+            xw .= @view(smc_out.particle_history[:, i, t]) .* w[i] ./ W
+            mu[:, t] .+= xw
+        end
     end
     return mu
 end
@@ -243,8 +250,8 @@ function simulate_backward(rng, particle_history, logweight_history, dtransition
         for j = 1:n_draws
             lw = view(LW_sm, :, j)
             w = exp.(lw .- maximum(lw))
-            a = wsample(rng, 1:n_particles, w)
-            X_sm[:, j, t] = X[:, a, t]
+            aj = wsample(rng, 1:n_particles, w)
+            X_sm[:, j, t] = X[:, aj, t]
         end
     end
 
@@ -260,30 +267,6 @@ function dtransition_outer(Xprev, X, dtransition, t)
     return reshape(F, n_particles, n_draws)
 end
 
-function calculate_ffbs_weights(
-    ws_x::AbstractVector,
-    ws_y::AbstractVector,
-    F::AbstractMatrix,
-)
-    ws_x .+ F .+ ws_y'
-end
-
 function calculate_ffbs_weights(ws_x::AbstractVector, F::AbstractMatrix)
     ws_x .+ F
-end
-
-function simulate_threaded(particle_history, logweight_history, dt, K)
-    N = Base.Threads.nthreads()
-    ffbs_out = zeros(
-        eltype(particle_history),
-        size(particle_history, 1),
-        K * N,
-        size(particle_history, 3),
-    )
-    Base.Threads.@threads for n = 1:N
-        rng = Random.MersenneTwister()
-        ffbs_out[:, (1+(n-1)*K):(n*K), :] =
-            simulate_backward(rng, particle_history, logweight_history, dt, K)
-    end
-    return ffbs_out
 end
