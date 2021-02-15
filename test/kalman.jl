@@ -363,3 +363,8 @@ state_nomutate = SMC.smooth(model_nomutate, Y_missing);
 @test all(ms_smoothed ≈ state_nomutate.ms_smoothed)
 @test all(Vs_smoothed ≈ state_nomutate.Vs_smoothed)
 @inferred SMC.smooth(model_nomutate, Y_missing);
+
+## Draw posterior pass_threshold
+using Random: MersenneTwister
+Xs_smoothed =
+    @inferred SMC.draw_posterior_path(MersenneTwister(23), ms, Vs, G0, G, Σ, Tau, μ0, Tau0)
