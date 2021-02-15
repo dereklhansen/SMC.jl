@@ -269,37 +269,41 @@ function backward_smooth_step_mv(G0, G1, Tau, m_t, V_t, m_tp1_sm, V_tp1_sm)
     return m_t_sm, V_t_sm, Cov_tp1_t
 end
 
-function draw_posterior_path(rng, ms, Vs, G0, G1, Σ, Tau, μ0, Tau0; mutate = true)
+function can_mutate(::KalmanModel{mutate}) where {mutate}
+    return mutate
+end
+
+function sample_smooth(m::KalmanModel, rng, ms, Vs)
     T = size(ms)[2]
     V_fill_in = zero(Vs[:, :, end])
-    if mutate
+    if can_mutate(m)
         Xs_smoothed = deepcopy(ms)
         Xs_smoothed[:, end] = rand(rng, MvNormal(ms[:, end], Symmetric(Vs[:, :, end])))
     else
-        Xs_smoothed = rand(rng, MvNormal(ms[:, end], Symmetric(Vs[:, :, end])))
+        Xs_smoothed = rand(rng, MvNormal(ms[:, end], Symmetric(Vs[:, :, end])), 1)
     end
 
     if (T > 1)
         for t = (T-1):-1:1
-            if mutate
+            if can_mutate(m)
                 Xs_next = view(Xs_smoothed, :, t + 1)
             else
                 Xs_next = view(Xs_smoothed, :, 1)
             end
             m_smoothed, V_smoothed, _ = backward_smooth_step_mv(
-                G0(t + 1),
-                G1(t + 1),
-                Tau(t + 1),
+                m.θ.G0(t + 1),
+                m.θ.G1(t + 1),
+                m.θ.Tau(t + 1),
                 view(ms, :, t),
                 view(Vs, :, :, t),
                 Xs_next,
                 V_fill_in,
             )
-            if mutate
+            if can_mutate(m)
                 Xs_smoothed[:, t] = rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed)))
             else
                 Xs_smoothed = hcat(
-                    rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed))),
+                    rand(rng, MvNormal(m_smoothed, Symmetric(V_smoothed)), 1),
                     Xs_smoothed,
                 )
             end
@@ -307,4 +311,10 @@ function draw_posterior_path(rng, ms, Vs, G0, G1, Σ, Tau, μ0, Tau0; mutate = t
     end
 
     return Xs_smoothed
+end
+
+# Old interface
+function draw_posterior_path(rng, ms, Vs, G0, G, Σ, Tau, μ0, Tau0)
+    m = KalmanModel(G0 = G0, G1 = G, Σ = Σ, Tau = Tau, μ0 = μ0, Tau0 = Tau0, mutate = true)
+    sample_smooth(m, rng, ms, Vs)
 end
