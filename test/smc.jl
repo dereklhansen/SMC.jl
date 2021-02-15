@@ -192,4 +192,6 @@ for md in [lg_smc_model, lgc_smc_model]
         smc_fns.dpre(smc_out.particle_history[:, :, 27], 28)
     fwd_w = fwd_weights .- logsumexp(fwd_weights)
     @test all(isapprox.(fwd_w, -log(K)))
+
+    @inferred calc_filtered_mean(smc_out)
 end

@@ -215,12 +215,22 @@ end
 
 Zygote.@nograd resample_particles
 
-function calc_filtered_mean(particle_history, logweight_history)
-    D, K, T = size(particle_history)
-    mu = fill(particle_history[1], D, T)
+function calc_filtered_mean(smc_out)
+    D, K, T = size(smc_out.particle_history)
+    mu = fill(zero(eltype(smc_out.particle_history)), D, T)
+    w = Vector{eltype(smc_out.particle_history)}(undef, K)
+    xw = Vector{eltype(smc_out.particle_history)}(undef, D)
     for t = 1:T
-        w = exp.(@view(logweight_history[:, t]) .- maximum(@view(logweight_history[:, t])))
-        mu[:, t] = sum(particle_history[:, i, t] * w[i] for i = 1:K) / sum(w)
+        w .=
+            exp.(
+                @view(smc_out.logweight_history[:, t]) .-
+                maximum(@view(smc_out.logweight_history[:, t])),
+            )
+        W = sum(w)
+        for i = 1:K
+            xw .= @view(smc_out.particle_history[:, i, t]) .* w[i] ./ W
+            mu[:, t] .+= xw
+        end
     end
     return mu
 end
