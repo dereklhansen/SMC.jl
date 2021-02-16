@@ -1,4 +1,8 @@
-using SMC: dt_smc2_estimation, smc_pmcmc_proposal_logdens, smc_pmcmc_proposal
+using SMC:
+    dt_smc2_estimation,
+    smc_pmcmc_proposal_logdens,
+    smc_pmcmc_proposal,
+    density_tempered_pmcmc
 using SMC.Models: LinearGaussianInfer, rprior, dprior, loglik_fn
 using Base.Iterators
 
@@ -148,4 +152,18 @@ dprop_pmh =
         C = C,
     )
 
+# Currently type-unstable because of pmap
 res = dt_smc2_estimation(ps, m, prior; rprop_pmh = rprop_pmh, dprop_pmh = dprop_pmh)
+
+# Should be type-stable
+ξ = 0.5
+pmcmc_out = @inferred density_tempered_pmcmc(
+    ps,
+    ls,
+    m,
+    prior,
+    ξ,
+    ξ;
+    rprop_pmh = rprop_pmh,
+    dprop_pmh = dprop_pmh,
+)

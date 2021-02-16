@@ -145,7 +145,10 @@ function dt_smc2_estimation(
     kwargs...,
 )
     N_θ = length(thetas)
+    ## Currently this pmap is type unstable, but this should
+    ## not be too detrimental to performance
     logliks = pmap(loglik_fun, thetas)
+    return logliks
     ξ = 0.0
 
     acceptances = Array{Bool,3}(undef, N_θ, pmcmc_theta_steps, 0)
@@ -171,7 +174,7 @@ function dt_smc2_estimation(
             pmcmc_theta_steps = pmcmc_theta_steps,
             kwargs...,
         )
-        acceptances = cat(acceptances, acceptances_i; dims = 3)
+        acceptances = cat3(acceptances, acceptances_i)
     end
 
     return thetas, logliks, acceptances
