@@ -1,5 +1,7 @@
+using SMC: density_tempered_pmcmc, smc_pmcmc_proposal_logdens, smc_pmcmc_proposal
 using SMC.Models: LinearGaussianInfer, rprior, dprior, loglik_fn
 using Base.Iterators
+
 
 y = [
     5.22896384735402,
@@ -114,4 +116,36 @@ d1 = @inferred dprior(m, ps[1])
 ds = @inferred dprior(m, ps)
 
 l = @inferred loglik_fn(m, ps[2])
-@inferred broadcast(m, ps[1:10])
+ls = @inferred broadcast(m, ps)
+
+prior = p -> dprior(m, p)
+
+lower_bound = (x, n) -> 0.0
+upper_bound = (x, n) -> Inf
+C = (2.38^2) / 2.0
+
+rprop_pmh =
+    (theta, mean, cov) -> begin
+        thetavec = smc_pmcmc_proposal(
+            vcat(theta...),
+            mean,
+            cov;
+            lower_bound = lower_bound,
+            upper_bound = upper_bound,
+            C = C,
+        )
+        NamedTuple{keys(theta)}(Tuple(thetavec))
+    end
+
+dprop_pmh =
+    (theta, theta_new, mean, cov) -> smc_pmcmc_proposal_logdens(
+        vcat(theta...),
+        vcat(theta_new...),
+        mean,
+        cov;
+        lower_bound = lower_bound,
+        upper_bound = upper_bound,
+        C = C,
+    )
+
+res = dt_smc2_estimation(ps, m, prior; rprop_pmh = rprop_pmh, dprop_pmh = dprop_pmh)
