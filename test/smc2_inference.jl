@@ -1,4 +1,4 @@
-using SMC: density_tempered_pmcmc, smc_pmcmc_proposal_logdens, smc_pmcmc_proposal
+using SMC: dt_smc2_estimation, smc_pmcmc_proposal_logdens, smc_pmcmc_proposal
 using SMC.Models: LinearGaussianInfer, rprior, dprior, loglik_fn
 using Base.Iterators
 
