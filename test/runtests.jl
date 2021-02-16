@@ -12,3 +12,7 @@ end
 @testset "smc" begin
     include("smc.jl")
 end
+
+@testset "smc2_inference" begin
+    include("smc2_inference.jl")
+end

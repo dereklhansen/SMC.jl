@@ -4,7 +4,9 @@ using Distributions: MvNormal, logpdf
 import ..kalman_filter_mv
 import ..kalman_smoother_mv
 
-struct LinearGaussian{T<:Any}
+abstract type AbstractLinearGaussian end;
+
+struct LinearGaussian{T<:Any} <: AbstractLinearGaussian
     θ::T
 end
 
@@ -17,11 +19,11 @@ function Base.show(io::IO, ::LinearGaussian)
 end
 
 # Generative Model
-function dpr_base(model::LinearGaussian, Zs)
+function dpr_base(model::AbstractLinearGaussian, Zs)
     logpdf(MvNormal(model.θ.μ0, model.θ.Tau0), Zs)
 end
 
-function rpr_base(model::LinearGaussian, rng)
+function rpr_base(model::AbstractLinearGaussian, rng)
     rand(
         rng,
         MvNormal(model.θ.states[:, 1], Symmetric(model.θ.variances[:, :, 1])),
@@ -29,7 +31,7 @@ function rpr_base(model::LinearGaussian, rng)
     )
 end
 
-function dt_base(m::LinearGaussian, Zs, Zs_new, t)
+function dt_base(m::AbstractLinearGaussian, Zs, Zs_new, t)
     μ = m.θ.G(t) * Zs
     Σ = m.θ.Tau(t)
     d = logpdf(MvNormal(Σ), Zs_new - μ)
@@ -37,7 +39,7 @@ function dt_base(m::LinearGaussian, Zs, Zs_new, t)
     return d
 end
 
-function dm_base(m::LinearGaussian, Zs, t)
+function dm_base(m::AbstractLinearGaussian, Zs, t)
     yt = view(m.θ.Y, t, :)
     if any(ismissing.(yt))
         return zeros(eltype(Zs), size(Zs, 2))
@@ -49,15 +51,15 @@ function dm_base(m::LinearGaussian, Zs, t)
 end
 
 # Inference Model
-function rinit_base(m::LinearGaussian, rng)
+function rinit_base(m::AbstractLinearGaussian, rng)
     rand(rng, MvNormal(m.θ.states_sm[:, 1], Symmetric(m.θ.variances_sm[:, :, 1])), m.θ.K)
 end
 
-function dinit_base(m::LinearGaussian, Zs)
+function dinit_base(m::AbstractLinearGaussian, Zs)
     logpdf(MvNormal(m.θ.states_sm[:, 1], Symmetric(m.θ.variances_sm[:, :, 1])), Zs)
 end
 
-function calc_prop(m::LinearGaussian, Zs, t)
+function calc_prop(m::AbstractLinearGaussian, Zs, t)
     μ =
         m.θ.states_sm[:, t] .+
         (m.θ.Covs_sm[:, :, t-1] / m.θ.variances_sm[:, :, t-1]) *
@@ -73,21 +75,21 @@ function calc_prop(m::LinearGaussian, Zs, t)
     return μ, Σ
 end
 
-function rp_base(m::LinearGaussian, rng, Zs, t)
+function rp_base(m::AbstractLinearGaussian, rng, Zs, t)
     μ, Σ = calc_prop(m, Zs, t)
     @assert isposdef(Σ)
     Zs_new = μ + rand(rng, MvNormal(Σ), size(Zs, 2))
     return Zs_new
 end
 
-function dp_base(m::LinearGaussian, Zs, Zs_new, t)
+function dp_base(m::AbstractLinearGaussian, Zs, Zs_new, t)
     μ, Σ = calc_prop(m, Zs, t)
     @assert isposdef(Σ)
     d = logpdf(MvNormal(Σ), Zs_new - μ)
     return d
 end
 
-function dpre_base(m::LinearGaussian, Zs, t)
+function dpre_base(m::AbstractLinearGaussian, Zs, t)
     d_smooth =
         logpdf(MvNormal(m.θ.states_sm[:, t-1], Symmetric(m.θ.variances_sm[:, :, t-1])), Zs)
     d_filt = logpdf(MvNormal(m.θ.states[:, t-1], Symmetric(m.θ.variances[:, :, t-1])), Zs)

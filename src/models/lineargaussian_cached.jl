@@ -5,7 +5,7 @@ using Distributions
 import ..kalman_filter_mv
 import ..kalman_smoother_mv
 
-struct LinearGaussianCached{T<:Any}
+struct LinearGaussianCached{T<:Any} <: AbstractLinearGaussian
     θ::T
 end
 
