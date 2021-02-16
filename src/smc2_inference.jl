@@ -148,7 +148,6 @@ function dt_smc2_estimation(
     ## Currently this pmap is type unstable, but this should
     ## not be too detrimental to performance
     logliks = pmap(loglik_fun, thetas)
-    return logliks
     ξ = 0.0
 
     acceptances = Array{Bool,3}(undef, N_θ, pmcmc_theta_steps, 0)

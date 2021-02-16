@@ -154,6 +154,12 @@ dprop_pmh =
 
 # Currently type-unstable because of pmap
 res = dt_smc2_estimation(ps, m, prior; rprop_pmh = rprop_pmh, dprop_pmh = dprop_pmh)
+@test typeof(res[1]) == typeof(ps)
+@test size(res[1]) == size(ps)
+@test res[2] isa Vector{Float64}
+@test size(res[2]) == (size(ps, 1),)
+@test res[3] isa Array{Bool,3}
+@test size(res[3], 1) == size(res[3], 2) == size(ps, 1)
 
 # Should be type-stable
 ξ = 0.5
