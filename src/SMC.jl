@@ -24,6 +24,7 @@ module Models
 import ..@NT
 include("models/lineargaussian.jl")
 include("models/lineargaussian_cached.jl")
+include("models/lineargaussian_inference.jl")
 end
 
 end
