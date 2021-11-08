@@ -142,12 +142,17 @@ function dt_smc2_estimation(
     grid_steps = 1e-8,
     ess_threshold = 0.5,
     pmcmc_theta_steps = 10,
+    parallelize = true,
     kwargs...,
 )
     N_θ = length(thetas)
-    ## Currently this pmap is type unstable, but this should
-    ## not be too detrimental to performance
-    logliks = pmap(loglik_fun, thetas)
+    if parallelize
+        ## Currently this pmap is type unstable, but this should
+        ## not be too detrimental to performance
+        logliks = pmap(loglik_fun, thetas)
+    else
+        logliks = map(loglik_fun, thetas)
+    end
     ξ = 0.0
 
     acceptances = Array{Bool,3}(undef, N_θ, pmcmc_theta_steps, 0)
