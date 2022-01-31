@@ -149,8 +149,14 @@ function dt_smc2_estimation(
     if parallelize
         ## Currently this pmap is type unstable, but this should
         ## not be too detrimental to performance
-        logliks = pmap(loglik_fun, thetas)
+
+        ## Need to make a CachingPool so data is cached
+        wp = CachingPool(workers())
+        logliks = pmap(wp, thetas) do theta
+            loglik_fun(theta)
+        end
     else
+        wp = missing
         logliks = map(loglik_fun, thetas)
     end
     ξ = 0.0
@@ -175,6 +181,7 @@ function dt_smc2_estimation(
             prior_fun,
             ξ,
             ξ_diff;
+            wp = wp,
             pmcmc_theta_steps = pmcmc_theta_steps,
             kwargs...,
         )
@@ -191,6 +198,7 @@ function density_tempered_pmcmc(
     prior_fun,
     ξ,
     ξ_diff;
+    wp = missing,
     pmcmc_theta_steps = 10,
     rprop_pmh = smc_pmcmc_proposal,
     dprop_pmh = smc_pmcmc_proposal_logdens,
@@ -217,18 +225,24 @@ function density_tempered_pmcmc(
     acceptances = Array{Bool,2}(undef, N_θ, pmcmc_theta_steps)
     for step_idx = 1:pmcmc_theta_steps
         starttime = Dates.now()
-        res = pmap(
-            pmcmc_propose_accept_reject,
-            thetas,
-            logliks,
-            cycle([loglik_fun]),
-            cycle([prior_fun]),
-            cycle([ξ]),
-            cycle([pmcmc_mean]),
-            cycle([pmcmc_cov]),
-            cycle([rprop_pmh]),
-            cycle([dprop_pmh]),
-        )
+        if !ismissing(wp)
+            res = pmap(wp, thetas, logliks) do theta, loglik
+                pmcmc_propose_accept_reject(theta, loglik, loglik_fun, prior_fun, ξ, pmcmc_mean, pmcmc_cov, rprop_pmh, dprop_pmh)
+            end
+        else
+            res = map(
+                pmcmc_propose_accept_reject,
+                thetas,
+                logliks,
+                cycle([loglik_fun]),
+                cycle([prior_fun]),
+                cycle([ξ]),
+                cycle([pmcmc_mean]),
+                cycle([pmcmc_cov]),
+                cycle([rprop_pmh]),
+                cycle([dprop_pmh]),
+            )
+        end
         for (i, r) in enumerate(res)
             thetas[i] = r[1]
             logliks[i] = r[2]
